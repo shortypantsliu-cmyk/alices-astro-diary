@@ -1,6 +1,19 @@
 import { useState, useEffect, useRef } from "react";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
+// ── Storage shim (works in Claude artifact and deployed app) ──────────────────
+const storage = {
+  get: (key) => {
+    if (window.storage) return window.storage.get(key).then(r => r?.value ?? null);
+    return Promise.resolve(localStorage.getItem(key));
+  },
+  set: (key, val) => {
+    if (window.storage) return window.storage.set(key, val);
+    localStorage.setItem(key, val);
+    return Promise.resolve();
+  },
+};
+
 // ── Load SheetJS from CDN ─────────────────────────────────────────────────────
 const XLSXLoader = () => {
   useEffect(() => {
@@ -188,19 +201,45 @@ export default function App() {
   const [topScopeFilter, setTopScopeFilter] = useState("All");
   const [typeBreakdownMode, setTypeBreakdownMode] = useState("sessions"); // "sessions" | "objects"
   const [objectSearch, setObjectSearch] = useState("");
+  const [objectImages, setObjectImages] = useState({}); // { "M42": ["url1","url2"], ... }
+  const [imageInput, setImageInput] = useState("");
+  const [lightboxUrl, setLightboxUrl] = useState(null);
   const fileRef = useRef();
 
   // Load from storage
   useEffect(() => {
-    try {
-      const val = localStorage.getItem("dso-sessions");
-      if (val) setSessions(JSON.parse(val));
-    } catch {}
+    (async () => {
+      try {
+        const val = await storage.get("dso-sessions");
+        if (val) setSessions(JSON.parse(val));
+        const imgVal = await storage.get("dso-images");
+        if (imgVal) setObjectImages(JSON.parse(imgVal));
+      } catch {}
+    })();
   }, []);
 
   // Save to storage
   const persist = (data) => {
-    try { localStorage.setItem("dso-sessions", JSON.stringify(data)); } catch {}
+    try { storage.set("dso-sessions", JSON.stringify(data)); } catch {}
+  };
+
+  const persistImages = (data) => {
+    try { storage.set("dso-images", JSON.stringify(data)); } catch {}
+  };
+
+  const addImage = (dsoKey, url) => {
+    if (!url.trim()) return;
+    const next = { ...objectImages, [dsoKey]: [...(objectImages[dsoKey] || []), url.trim()] };
+    setObjectImages(next);
+    persistImages(next);
+    setImageInput("");
+  };
+
+  const removeImage = (dsoKey, idx) => {
+    const next = { ...objectImages, [dsoKey]: objectImages[dsoKey].filter((_, i) => i !== idx) };
+    if (next[dsoKey].length === 0) delete next[dsoKey];
+    setObjectImages(next);
+    persistImages(next);
   };
 
   const updateSessions = (newList) => { setSessions(newList); persist(newList); };
@@ -417,6 +456,61 @@ export default function App() {
           onConfirm={confirmDialog.onConfirm}
           onCancel={closeConfirm}
         />
+      )}
+
+      {/* ── Lightbox ── */}
+      {lightboxUrl && (
+        <div
+          onClick={() => setLightboxUrl(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 2000,
+            background: "rgba(0,0,0,0.92)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            animation: "fadeIn 0.2s ease",
+          }}
+        >
+          <button
+            onClick={() => setLightboxUrl(null)}
+            style={{
+              position: "absolute", top: 20, right: 24,
+              background: "none", border: "none", color: "white",
+              fontSize: 32, cursor: "pointer", lineHeight: 1, opacity: 0.7,
+            }}
+          >✕</button>
+          <img
+            src={lightboxUrl}
+            alt="DSO image"
+            onClick={e => e.stopPropagation()}
+            style={{
+              maxWidth: "92vw", maxHeight: "88vh",
+              objectFit: "contain", borderRadius: 8,
+              boxShadow: "0 0 60px rgba(0,0,0,0.8)",
+            }}
+            onError={e => {
+              e.target.style.display = "none";
+              e.target.nextSibling.style.display = "flex";
+            }}
+          />
+          <div style={{
+            display: "none", flexDirection: "column", alignItems: "center", gap: 16,
+            color: "white", textAlign: "center",
+          }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 48 }}>🔗</div>
+            <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 16, letterSpacing: 2, opacity: 0.7 }}>
+              IMAGE CAN&#x2019;T BE DISPLAYED DIRECTLY
+            </div>
+            <a
+              href={lightboxUrl} target="_blank" rel="noreferrer"
+              style={{
+                color: "#38d4ff", fontFamily: "'Rajdhani', sans-serif",
+                fontSize: 14, letterSpacing: 1, textDecoration: "none",
+                border: "1px solid #38d4ff", borderRadius: 6, padding: "8px 20px",
+              }}
+            >OPEN IN NEW TAB</a>
+          </div>
+        </div>
       )}
 
       {/* ── Header ── */}
@@ -654,7 +748,7 @@ export default function App() {
                         </div>
                       )}
                       {matched.some(s => s.notes) && (
-                        <div>
+                        <div style={{ marginBottom: 16 }}>
                           <div style={{ color: PALETTE.muted, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'Rajdhani', sans-serif", marginBottom: 8 }}>Session Notes</div>
                           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                             {matched.filter(s => s.notes).map(s => (
@@ -666,6 +760,61 @@ export default function App() {
                           </div>
                         </div>
                       )}
+
+                      {/* ── Images ── */}
+                      {(() => {
+                        const dsoKey = firstName.trim().toUpperCase();
+                        const imgs = objectImages[dsoKey] || [];
+                        return (
+                          <div>
+                            <div style={{ color: PALETTE.muted, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'Rajdhani', sans-serif", marginBottom: 10 }}>Images</div>
+                            {imgs.length > 0 && (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+                                {imgs.map((url, idx) => (
+                                  <div key={idx} style={{ position: "relative", borderRadius: 6, overflow: "hidden", border: `1px solid ${PALETTE.border}`, cursor: "pointer" }}
+                                    onClick={() => setLightboxUrl(url)}
+                                  >
+                                      <img
+                                        src={url} alt={`${firstName} ${idx + 1}`}
+                                        style={{ width: 140, height: 100, objectFit: "cover", display: "block" }}
+                                        onError={e => { e.target.style.display = "none"; e.target.nextSibling.style.display = "flex"; }}
+                                      />
+                                      <div style={{ display: "none", width: 140, height: 100, background: "#0a1020", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 6, padding: 10, boxSizing: "border-box" }}>
+                                          <div style={{ fontSize: 22 }}>🔗</div>
+                                          <div style={{ color: PALETTE.accent, fontSize: 11, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 1, textAlign: "center", wordBreak: "break-all", lineHeight: 1.3 }}>
+                                            {(() => { try { return new URL(url).hostname.replace("www.", ""); } catch { return "Open link"; } })()}
+                                          </div>
+                                        </div>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); removeImage(dsoKey, idx); }}
+                                      style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.7)", border: "none", borderRadius: 3, color: PALETTE.red, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: "2px 5px" }}
+                                    >✕</button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <div style={{ display: "flex", gap: 8 }}>
+                              <input
+                                value={imageInput}
+                                onChange={e => setImageInput(e.target.value)}
+                                onKeyDown={e => e.key === "Enter" && addImage(dsoKey, imageInput)}
+                                placeholder="Paste image URL…"
+                                style={{ ...inputStyle, flex: 1, padding: "7px 12px", fontSize: 13 }}
+                              />
+                              <button
+                                onClick={() => addImage(dsoKey, imageInput)}
+                                disabled={!imageInput.trim()}
+                                style={{
+                                  background: imageInput.trim() ? PALETTE.accent : PALETTE.border,
+                                  color: imageInput.trim() ? PALETTE.bg : PALETTE.muted,
+                                  border: "none", borderRadius: 6, padding: "7px 16px", cursor: imageInput.trim() ? "pointer" : "default",
+                                  fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: 1, whiteSpace: "nowrap",
+                                }}
+                              >ADD</button>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })()}
