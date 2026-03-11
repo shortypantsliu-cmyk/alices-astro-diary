@@ -333,7 +333,26 @@ export default function App() {
         })).filter(r => r.dsoName);
         const next = [...sessions, ...imported];
         updateSessions(next);
-        setImportMsg(`✓ Imported ${imported.length} session${imported.length !== 1 ? "s" : ""}`);
+
+        // Import Images sheet if present
+        const imgSheet = wb.Sheets["Images"];
+        let importedImgCount = 0;
+        if (imgSheet) {
+          const imgRows = XLSX.utils.sheet_to_json(imgSheet, { raw: true });
+          const merged = { ...objectImages };
+          imgRows.forEach(r => {
+            const key = (r.dsoName || "").trim().toUpperCase();
+            const url = (r.imageUrl || "").trim();
+            if (!key || !url) return;
+            if (!merged[key]) merged[key] = [];
+            if (!merged[key].includes(url)) { merged[key].push(url); importedImgCount++; }
+          });
+          setObjectImages(merged);
+          persistImages(merged);
+        }
+
+        const imgNote = importedImgCount > 0 ? `, ${importedImgCount} image link${importedImgCount !== 1 ? "s" : ""}` : "";
+        setImportMsg(`✓ Imported ${imported.length} session${imported.length !== 1 ? "s" : ""}${imgNote}`);
         setTimeout(() => setImportMsg(""), 4000);
       } catch (err) {
         setImportMsg("✗ Import failed — check file format");
@@ -362,6 +381,16 @@ export default function App() {
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Sessions");
+
+    // Images sheet — one row per URL
+    const imageRows = Object.entries(objectImages).flatMap(([dsoName, urls]) =>
+      urls.map(imageUrl => ({ dsoName, imageUrl }))
+    );
+    if (imageRows.length > 0) {
+      const wsImg = XLSX.utils.json_to_sheet(imageRows);
+      XLSX.utils.book_append_sheet(wb, wsImg, "Images");
+    }
+
     const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     const blob = new Blob([wbout], { type: "application/octet-stream" });
     const url = URL.createObjectURL(blob);
