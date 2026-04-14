@@ -25,7 +25,10 @@ export default async (req) => {
   // ── GET ──────────────────────────────────────────────────────────────────────
   if (req.method === "GET") {
     const value = await store.get(key);
-    return new Response(value ?? "null", {
+    // Return empty defaults when the blob doesn't exist yet,
+    // so the app gets [] for sessions and {} for images rather than null.
+    const empty = key === "dso-images" ? "{}" : "[]";
+    return new Response(value ?? empty, {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
