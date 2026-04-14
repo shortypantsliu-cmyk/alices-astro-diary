@@ -1,14 +1,36 @@
 import { useState, useEffect, useRef } from "react";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
-// ── Storage shim (works in Claude artifact and deployed app) ──────────────────
+// ── Storage (Netlify Blobs via /api/data, localStorage fallback for local dev) ─
+// Set VITE_DIARY_SECRET in your .env (local) and in Netlify env vars (deployed).
+// The same secret must be set as DIARY_SECRET in your Netlify site settings.
+const DIARY_TOKEN = import.meta.env.VITE_DIARY_SECRET;
+const USE_NETLIFY = Boolean(DIARY_TOKEN);
+
 const storage = {
-  get: (key) => {
-    if (window.storage) return window.storage.get(key).then(r => r?.value ?? null);
+  get: async (key) => {
+    if (USE_NETLIFY) {
+      try {
+        const res = await fetch(`/api/data?key=${encodeURIComponent(key)}`, {
+          headers: { "x-diary-token": DIARY_TOKEN },
+        });
+        if (!res.ok) return null;
+        return res.text();
+      } catch { return null; }
+    }
     return Promise.resolve(localStorage.getItem(key));
   },
-  set: (key, val) => {
-    if (window.storage) return window.storage.set(key, val);
+  set: async (key, val) => {
+    if (USE_NETLIFY) {
+      try {
+        await fetch(`/api/data?key=${encodeURIComponent(key)}`, {
+          method: "POST",
+          headers: { "x-diary-token": DIARY_TOKEN, "Content-Type": "application/json" },
+          body: val,
+        });
+      } catch {}
+      return;
+    }
     localStorage.setItem(key, val);
     return Promise.resolve();
   },
@@ -204,6 +226,7 @@ export default function App() {
   const [objectImages, setObjectImages] = useState({}); // { "M42": ["url1","url2"], ... }
   const [imageInput, setImageInput] = useState("");
   const [lightboxUrl, setLightboxUrl] = useState(null);
+  const [gallerySort, setGallerySort] = useState("images"); // "images" | "date" | "time" | "name" | "type"
   const fileRef = useRef();
 
   // Load from storage
@@ -459,6 +482,7 @@ export default function App() {
     { id: "dashboard", label: "Dashboard" },
     { id: "log", label: "Session Log" },
     { id: "add", label: editId ? "Edit Session" : "Add Session" },
+    { id: "gallery", label: "Gallery" },
     { id: "import", label: "Import / Export" },
   ];
 
@@ -1024,6 +1048,220 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* ── GALLERY ── */}
+        {tab === "gallery" && (() => {
+          const imageEntries = Object.entries(objectImages); // [["M42", ["url1",...]], ...]
+
+          // Build a lookup of DSO metadata from sessions
+          const dsoMeta = {};
+          sessions.forEach(s => {
+            const key = s.dsoName.trim().toUpperCase();
+            if (!dsoMeta[key]) {
+              dsoMeta[key] = { dsoName: s.dsoName, commonName: s.commonName || "", dsoType: s.dsoType, totalTime: 0, latestDate: "" };
+            }
+            dsoMeta[key].totalTime += totalSecs(s);
+            if (!dsoMeta[key].commonName && s.commonName) dsoMeta[key].commonName = s.commonName;
+            if (s.date && s.date > dsoMeta[key].latestDate) dsoMeta[key].latestDate = s.date;
+          });
+
+          const totalImageCount = imageEntries.reduce((a, [, urls]) => a + urls.length, 0);
+
+          return (
+            <div style={{ animation: "fadeIn 0.4s ease" }}>
+              {/* Header row */}
+              <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 28, flexWrap: "wrap", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 16 }}>
+                  <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 20, fontWeight: 700, color: PALETTE.accent, letterSpacing: 2 }}>
+                    ✦ IMAGE GALLERY
+                  </div>
+                  {totalImageCount > 0 && (
+                    <div style={{ color: PALETTE.muted, fontSize: 12, fontFamily: "'Share Tech Mono', monospace" }}>
+                      {totalImageCount} image{totalImageCount !== 1 ? "s" : ""} across {imageEntries.length} object{imageEntries.length !== 1 ? "s" : ""}
+                    </div>
+                  )}
+                </div>
+                {imageEntries.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ color: PALETTE.muted, fontSize: 11, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 1.5, textTransform: "uppercase" }}>Sort</span>
+                    <div style={{ display: "flex", background: "#0a1020", border: `1px solid ${PALETTE.border}`, borderRadius: 6, overflow: "hidden" }}>
+                      {[["images", "# Images"], ["date", "Date"], ["time", "Imaging Time"], ["name", "Name"], ["type", "DSO Type"]].map(([mode, label]) => (
+                        <button key={mode} onClick={() => setGallerySort(mode)} style={{
+                          background: gallerySort === mode ? PALETTE.accent : "none",
+                          color: gallerySort === mode ? PALETTE.bg : PALETTE.muted,
+                          border: "none", padding: "5px 12px", cursor: "pointer",
+                          fontFamily: "'Rajdhani', sans-serif", fontSize: 11, fontWeight: 700,
+                          letterSpacing: 1, transition: "all 0.15s", whiteSpace: "nowrap",
+                        }}>{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {imageEntries.length === 0 ? (
+                // Empty state
+                <div style={{ textAlign: "center", padding: "80px 0", color: PALETTE.muted }}>
+                  <div style={{ fontSize: 48, marginBottom: 16 }}>🖼️</div>
+                  <div style={{ fontSize: 18, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 2, marginBottom: 8 }}>NO IMAGES YET</div>
+                  <div style={{ fontSize: 13, maxWidth: 340, margin: "0 auto", lineHeight: 1.7 }}>
+                    Add image URLs from the <span style={{ color: PALETTE.accent }}>Dashboard</span> — search for an object in the Object Lookup panel and paste your AstroBin or image links there.
+                  </div>
+                  <button onClick={() => setTab("dashboard")} style={{
+                    marginTop: 24, background: PALETTE.accent, color: PALETTE.bg, border: "none",
+                    borderRadius: 6, padding: "10px 24px", cursor: "pointer",
+                    fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 14, letterSpacing: 1,
+                  }}>GO TO DASHBOARD</button>
+                </div>
+              ) : (
+                // Object cards grid
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 20 }}>
+                  {imageEntries
+                    .sort((a, b) => {
+                      const ma = dsoMeta[a[0]] || { dsoName: a[0], commonName: "", dsoType: "Other", totalTime: 0, latestDate: "" };
+                      const mb = dsoMeta[b[0]] || { dsoName: b[0], commonName: "", dsoType: "Other", totalTime: 0, latestDate: "" };
+                      if (gallerySort === "images") {
+                        if (b[1].length !== a[1].length) return b[1].length - a[1].length;
+                        return a[0].localeCompare(b[0]);
+                      }
+                      if (gallerySort === "date") return (mb.latestDate || "").localeCompare(ma.latestDate || "");
+                      if (gallerySort === "time") return mb.totalTime - ma.totalTime;
+                      if (gallerySort === "name") return ma.dsoName.localeCompare(mb.dsoName);
+                      if (gallerySort === "type") {
+                        const tc = ma.dsoType.localeCompare(mb.dsoType);
+                        return tc !== 0 ? tc : ma.dsoName.localeCompare(mb.dsoName);
+                      }
+                      return 0;
+                    })
+                    .map(([dsoKey, urls]) => {
+                      const meta = dsoMeta[dsoKey] || { dsoName: dsoKey, commonName: "", dsoType: "Other", totalTime: 0 };
+                      const typeColor = TYPE_COLORS[meta.dsoType] || "#6b7280";
+                      return (
+                        <div key={dsoKey} style={{
+                          background: PALETTE.panel,
+                          border: `1px solid ${PALETTE.border}`,
+                          borderTop: `2px solid ${typeColor}`,
+                          borderRadius: 10,
+                          overflow: "hidden",
+                          animation: "fadeIn 0.4s ease",
+                        }}>
+                          {/* Card header */}
+                          <div style={{ padding: "14px 16px 10px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                              <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 16, color: PALETTE.text, fontWeight: 700 }}>
+                                {meta.dsoName}
+                              </span>
+                              {meta.commonName && (
+                                <span style={{ fontFamily: "'Exo 2', sans-serif", fontSize: 12, color: PALETTE.muted }}>
+                                  {meta.commonName}
+                                </span>
+                              )}
+                              <span style={{
+                                marginLeft: "auto",
+                                background: `${typeColor}22`, color: typeColor,
+                                padding: "2px 8px", borderRadius: 4,
+                                fontSize: 10, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 0.5, whiteSpace: "nowrap",
+                              }}>
+                                {meta.dsoType}
+                              </span>
+                            </div>
+                            {meta.totalTime > 0 && (
+                              <div style={{ marginTop: 6, color: PALETTE.muted, fontSize: 11, fontFamily: "'Share Tech Mono', monospace" }}>
+                                <span style={{ color: PALETTE.gold }}>{fmtTime(meta.totalTime)}</span> total imaging time
+                                {" · "}
+                                <span>{urls.length} image{urls.length !== 1 ? "s" : ""}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Image grid */}
+                          <div style={{
+                            display: "grid",
+                            gridTemplateColumns: urls.length === 1 ? "1fr" : urls.length === 2 ? "1fr 1fr" : "1fr 1fr 1fr",
+                            gap: 2,
+                            padding: "0 2px 2px",
+                          }}>
+                            {urls.map((url, idx) => {
+                              const isFirst = idx === 0;
+                              const spanAll = urls.length === 1;
+                              const imgHeight = spanAll ? 220 : urls.length === 2 ? 160 : idx === 0 && urls.length > 3 ? 160 : 120;
+                              return (
+                                <div
+                                  key={idx}
+                                  onClick={() => setLightboxUrl(url)}
+                                  style={{
+                                    position: "relative",
+                                    cursor: "pointer",
+                                    borderRadius: idx === 0 ? "0 0 0 8px" : idx === urls.length - 1 ? "0 0 8px 0" : 0,
+                                    overflow: "hidden",
+                                    background: "#0a1020",
+                                    gridColumn: isFirst && urls.length === 3 ? "span 1" : undefined,
+                                  }}
+                                >
+                                  <img
+                                    src={url}
+                                    alt={`${meta.dsoName} ${idx + 1}`}
+                                    style={{ width: "100%", height: imgHeight, objectFit: "cover", display: "block", transition: "transform 0.3s ease" }}
+                                    onMouseEnter={e => e.target.style.transform = "scale(1.04)"}
+                                    onMouseLeave={e => e.target.style.transform = "scale(1)"}
+                                    onError={e => {
+                                      e.target.style.display = "none";
+                                      e.target.nextSibling.style.display = "flex";
+                                    }}
+                                  />
+                                  {/* Fallback for non-embeddable links (e.g. AstroBin) */}
+                                  <div style={{
+                                    display: "none",
+                                    width: "100%", height: imgHeight,
+                                    background: "#0a1020",
+                                    alignItems: "center", justifyContent: "center",
+                                    flexDirection: "column", gap: 6, padding: 10,
+                                    boxSizing: "border-box",
+                                  }}>
+                                    <div style={{ fontSize: 24 }}>🔗</div>
+                                    <div style={{ color: PALETTE.accent, fontSize: 11, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 1, textAlign: "center" }}>
+                                      {(() => { try { return new URL(url).hostname.replace("www.", ""); } catch { return "Link"; } })()}
+                                    </div>
+                                    <a
+                                      href={url} target="_blank" rel="noreferrer"
+                                      onClick={e => e.stopPropagation()}
+                                      style={{
+                                        color: PALETTE.accent, fontSize: 10,
+                                        fontFamily: "'Rajdhani', sans-serif", letterSpacing: 1,
+                                        textDecoration: "none", border: `1px solid ${PALETTE.accent}44`,
+                                        borderRadius: 4, padding: "3px 8px", marginTop: 2,
+                                      }}
+                                    >OPEN ↗</a>
+                                  </div>
+                                  {/* Hover overlay */}
+                                  <div style={{
+                                    position: "absolute", inset: 0,
+                                    background: "rgba(0,0,0,0)",
+                                    transition: "background 0.2s",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                  }}
+                                    onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.25)"}
+                                    onMouseLeave={e => e.currentTarget.style.background = "rgba(0,0,0,0)"}
+                                  >
+                                    <span style={{
+                                      color: "white", fontSize: 20, opacity: 0,
+                                      transition: "opacity 0.2s", pointerEvents: "none",
+                                    }}
+                                      className="gallery-zoom-icon"
+                                    >⛶</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ── IMPORT / EXPORT ── */}
         {tab === "import" && (
