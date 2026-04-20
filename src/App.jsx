@@ -256,6 +256,16 @@ export default function App() {
     })();
   }, []);
 
+  // Close scope picker on any outside click — uses document listener to avoid
+  // z-index stacking context issues (overlay div approach doesn't work when the
+  // content area has position:relative + zIndex:1 which traps child z-indices)
+  useEffect(() => {
+    if (!scopePickerOpen) return;
+    const close = () => setScopePickerOpen(null);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [scopePickerOpen]);
+
   // Save to storage
   const persist = (data) => {
     try { storage.set("dso-sessions", JSON.stringify(data)); } catch {}
@@ -543,11 +553,6 @@ export default function App() {
           onConfirm={confirmDialog.onConfirm}
           onCancel={closeConfirm}
         />
-      )}
-
-      {/* Close scope picker on outside click */}
-      {scopePickerOpen && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setScopePickerOpen(null)} />
       )}
 
       {/* ── Lightbox ── */}
