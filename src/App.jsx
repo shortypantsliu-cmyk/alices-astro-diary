@@ -276,11 +276,13 @@ export default function App() {
   };
 
   const updateImageScope = (dsoKey, idx, telescope) => {
-    const imgs = (objectImages[dsoKey] || []).map(normalizeImg);
-    const updated = imgs.map((img, i) => i === idx ? { ...img, telescope } : img);
-    const next = { ...objectImages, [dsoKey]: updated };
-    setObjectImages(next);
-    persistImages(next);
+    setObjectImages(prev => {
+      const imgs = (prev[dsoKey] || []).map(normalizeImg);
+      const updated = imgs.map((img, i) => i === idx ? { ...img, telescope } : img);
+      const next = { ...prev, [dsoKey]: updated };
+      persistImages(next);
+      return next;
+    });
     setScopePickerOpen(null);
   };
 
@@ -901,11 +903,11 @@ export default function App() {
                                         {isPickerOpen && (
                                           <div style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 4, background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, borderRadius: 6, overflow: "hidden", minWidth: 150, zIndex: 50, boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
                                             {scopeOptions.map(sc => (
-                                              <button key={sc} onClick={() => updateImageScope(dsoKey, idx, sc)} style={{ display: "block", width: "100%", background: imgData.telescope === sc ? `${PALETTE.accent}20` : "none", border: "none", padding: "7px 12px", cursor: "pointer", textAlign: "left", color: imgData.telescope === sc ? PALETTE.accent : PALETTE.text, fontSize: 12, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 0.5 }}>{sc}</button>
+                                              <button key={sc} onClick={e => { e.stopPropagation(); updateImageScope(dsoKey, idx, sc); }} style={{ display: "block", width: "100%", background: imgData.telescope === sc ? `${PALETTE.accent}20` : "none", border: "none", padding: "7px 12px", cursor: "pointer", textAlign: "left", color: imgData.telescope === sc ? PALETTE.accent : PALETTE.text, fontSize: 12, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 0.5 }}>{sc}</button>
                                             ))}
                                             {!scopeOptions.length && <div style={{ padding: "7px 12px", color: PALETTE.muted, fontSize: 11, fontFamily: "'Rajdhani', sans-serif" }}>No telescopes in log yet</div>}
                                             {imgData.telescope && (
-                                              <button onClick={() => updateImageScope(dsoKey, idx, "")} style={{ display: "block", width: "100%", background: "none", border: "none", borderTop: `1px solid ${PALETTE.border}`, padding: "6px 12px", cursor: "pointer", textAlign: "left", color: PALETTE.muted, fontSize: 11, fontFamily: "'Rajdhani', sans-serif" }}>Remove tag</button>
+                                              <button onClick={e => { e.stopPropagation(); updateImageScope(dsoKey, idx, ""); }} style={{ display: "block", width: "100%", background: "none", border: "none", borderTop: `1px solid ${PALETTE.border}`, padding: "6px 12px", cursor: "pointer", textAlign: "left", color: PALETTE.muted, fontSize: 11, fontFamily: "'Rajdhani', sans-serif" }}>Remove tag</button>
                                             )}
                                           </div>
                                         )}
@@ -1229,7 +1231,7 @@ export default function App() {
                           border: `1px solid ${PALETTE.border}`,
                           borderTop: `2px solid ${typeColor}`,
                           borderRadius: 10,
-                          overflow: "hidden",
+                          overflow: "visible",
                           animation: "fadeIn 0.4s ease",
                         }}>
                           {/* Card header */}
@@ -1275,6 +1277,8 @@ export default function App() {
                             gridTemplateColumns: imgs.length === 1 ? "1fr" : imgs.length === 2 ? "1fr 1fr" : "1fr 1fr 1fr",
                             gap: 2,
                             padding: "0 2px 2px",
+                            borderRadius: "0 0 8px 8px",
+                            overflow: "visible",
                           }}>
                             {imgs.map((imgData, idx) => {
                               const isFirst = idx === 0;
@@ -1363,7 +1367,7 @@ export default function App() {
                                         boxShadow: "0 4px 20px rgba(0,0,0,0.7)",
                                       }}>
                                         {scopeOptions.map(sc => (
-                                          <button key={sc} onClick={() => updateImageScope(dsoKey, idx, sc)} style={{
+                                          <button key={sc} onClick={e => { e.stopPropagation(); updateImageScope(dsoKey, idx, sc); }} style={{
                                             display: "block", width: "100%",
                                             background: imgData.telescope === sc ? `${PALETTE.accent}20` : "none",
                                             border: "none", padding: "8px 14px", cursor: "pointer",
@@ -1376,7 +1380,7 @@ export default function App() {
                                           <div style={{ padding: "8px 14px", color: PALETTE.muted, fontSize: 11, fontFamily: "'Rajdhani', sans-serif" }}>No telescopes in log</div>
                                         )}
                                         {imgData.telescope && (
-                                          <button onClick={() => updateImageScope(dsoKey, idx, "")} style={{
+                                          <button onClick={e => { e.stopPropagation(); updateImageScope(dsoKey, idx, ""); }} style={{
                                             display: "block", width: "100%", background: "none",
                                             border: "none", borderTop: `1px solid ${PALETTE.border}`,
                                             padding: "7px 14px", cursor: "pointer", textAlign: "left",
