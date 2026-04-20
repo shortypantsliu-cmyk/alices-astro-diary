@@ -116,6 +116,11 @@ function totalSecs(session) {
   return (parseFloat(session.exposureTime) || 0) * (parseInt(session.numSubs) || 0);
 }
 
+// Images are stored as { url, telescope } objects.
+// Old entries saved as plain strings are normalised on read.
+const normalizeImg = (img) =>
+  typeof img === "string" ? { url: img, telescope: "" } : img;
+
 // ── Starfield Background ──────────────────────────────────────────────────────
 const Stars = () => {
   const stars = useRef(
@@ -226,8 +231,18 @@ export default function App() {
   const [objectImages, setObjectImages] = useState({}); // { "M42": ["url1","url2"], ... }
   const [imageInput, setImageInput] = useState("");
   const [lightboxUrl, setLightboxUrl] = useState(null);
-  const [gallerySort, setGallerySort] = useState("images"); // "images" | "date" | "time" | "name" | "type"
+  const [gallerySort, setGallerySort] = useState("images");
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
+  const [scopePickerOpen, setScopePickerOpen] = useState(null); // { dsoKey, idx } | null
+  const [imageScope, setImageScope] = useState("");              // telescope for the image being added
   const fileRef = useRef();
+
+  // Responsive breakpoint listener
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // Load from storage
   useEffect(() => {
@@ -250,12 +265,23 @@ export default function App() {
     try { storage.set("dso-images", JSON.stringify(data)); } catch {}
   };
 
-  const addImage = (dsoKey, url) => {
+  const addImage = (dsoKey, url, telescope = "") => {
     if (!url.trim()) return;
-    const next = { ...objectImages, [dsoKey]: [...(objectImages[dsoKey] || []), url.trim()] };
+    const entry = { url: url.trim(), telescope };
+    const next = { ...objectImages, [dsoKey]: [...(objectImages[dsoKey] || []), entry] };
     setObjectImages(next);
     persistImages(next);
     setImageInput("");
+    setImageScope("");
+  };
+
+  const updateImageScope = (dsoKey, idx, telescope) => {
+    const imgs = (objectImages[dsoKey] || []).map(normalizeImg);
+    const updated = imgs.map((img, i) => i === idx ? { ...img, telescope } : img);
+    const next = { ...objectImages, [dsoKey]: updated };
+    setObjectImages(next);
+    persistImages(next);
+    setScopePickerOpen(null);
   };
 
   const removeImage = (dsoKey, idx) => {
@@ -366,9 +392,11 @@ export default function App() {
           imgRows.forEach(r => {
             const key = (r.dsoName || "").trim().toUpperCase();
             const url = (r.imageUrl || "").trim();
+            const telescope = (r.telescope || "").trim();
             if (!key || !url) return;
             if (!merged[key]) merged[key] = [];
-            if (!merged[key].includes(url)) { merged[key].push(url); importedImgCount++; }
+            const entry = { url, telescope };
+            if (!merged[key].some(img => normalizeImg(img).url === url)) { merged[key].push(entry); importedImgCount++; }
           });
           setObjectImages(merged);
           persistImages(merged);
@@ -405,9 +433,12 @@ export default function App() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Sessions");
 
-    // Images sheet — one row per URL
-    const imageRows = Object.entries(objectImages).flatMap(([dsoName, urls]) =>
-      urls.map(imageUrl => ({ dsoName, imageUrl }))
+    // Images sheet — one row per URL including telescope tag
+    const imageRows = Object.entries(objectImages).flatMap(([dsoName, imgs]) =>
+      imgs.map(img => {
+        const { url, telescope } = normalizeImg(img);
+        return { dsoName, imageUrl: url, telescope };
+      })
     );
     if (imageRows.length > 0) {
       const wsImg = XLSX.utils.json_to_sheet(imageRows);
@@ -452,6 +483,7 @@ export default function App() {
 
   // Unique telescope names for the top-targets filter
   const telescopeNames = ["All", ...Array.from(new Set(sessions.map(s => s.telescope).filter(Boolean))).sort()];
+  const scopeOptions   = Array.from(new Set(sessions.map(s => s.telescope).filter(Boolean))).sort();
 
   // Top objects by time — filtered by selected telescope
   const objTimes = sessions
@@ -479,11 +511,11 @@ export default function App() {
   const sortBy = (col) => { if (sortCol === col) setSortDir(d => -d); else { setSortCol(col); setSortDir(-1); } };
 
   const navItems = [
-    { id: "dashboard", label: "Dashboard" },
-    { id: "log", label: "Session Log" },
-    { id: "add", label: editId ? "Edit Session" : "Add Session" },
-    { id: "gallery", label: "Gallery" },
-    { id: "import", label: "Import / Export" },
+    { id: "dashboard", label: "Dashboard",                           short: "Dash",    icon: "◈" },
+    { id: "log",       label: "Session Log",                         short: "Log",     icon: "≡" },
+    { id: "add",       label: editId ? "Edit Session" : "Add Session", short: editId ? "Edit" : "Add", icon: "⊕" },
+    { id: "gallery",   label: "Gallery",                             short: "Gallery", icon: "⊞" },
+    { id: "import",    label: "Import / Export",                     short: "Import",  icon: "⇅" },
   ];
 
   const TH = ({ col, label }) => (
@@ -509,6 +541,11 @@ export default function App() {
           onConfirm={confirmDialog.onConfirm}
           onCancel={closeConfirm}
         />
+      )}
+
+      {/* Close scope picker on outside click */}
+      {scopePickerOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setScopePickerOpen(null)} />
       )}
 
       {/* ── Lightbox ── */}
@@ -568,10 +605,10 @@ export default function App() {
 
       {/* ── Header ── */}
       <div style={{ position: "relative", zIndex: 10, borderBottom: `1px solid ${PALETTE.border}`, background: "rgba(7,10,18,0.9)", backdropFilter: "blur(12px)" }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 20px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 0 0" }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", padding: isMobile ? "0 16px" : "0 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: isMobile ? "12px 0" : "16px 0 0" }}>
             <div>
-              <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 26, fontWeight: 700, color: PALETTE.accent, letterSpacing: 3, lineHeight: 1 }}>
+              <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: isMobile ? 20 : 26, fontWeight: 700, color: PALETTE.accent, letterSpacing: 3, lineHeight: 1 }}>
                 ✦ Alice's Astro Diary
               </div>
               <div style={{ color: PALETTE.muted, fontSize: 11, letterSpacing: 2, marginTop: 2 }}>DEEP SKY IMAGING JOURNAL</div>
@@ -581,26 +618,28 @@ export default function App() {
               <div>{fmtTime(totalTime)} total</div>
             </div>
           </div>
-          {/* Nav */}
-          <div style={{ display: "flex", gap: 0, marginTop: 16 }}>
-            {navItems.map(n => (
-              <button key={n.id} onClick={() => setTab(n.id)} style={{
-                background: "none", border: "none", cursor: "pointer",
-                padding: "10px 20px", fontSize: 13, letterSpacing: 1,
-                fontFamily: "'Rajdhani', sans-serif", fontWeight: 600,
-                color: tab === n.id ? PALETTE.accent : PALETTE.muted,
-                borderBottom: `2px solid ${tab === n.id ? PALETTE.accent : "transparent"}`,
-                transition: "all 0.2s",
-              }}>
-                {n.label.toUpperCase()}
-              </button>
-            ))}
-          </div>
+          {/* Nav — desktop only; mobile uses fixed bottom bar */}
+          {!isMobile && (
+            <div style={{ display: "flex", gap: 0, marginTop: 16 }}>
+              {navItems.map(n => (
+                <button key={n.id} onClick={() => setTab(n.id)} style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  padding: "10px 20px", fontSize: 13, letterSpacing: 1,
+                  fontFamily: "'Rajdhani', sans-serif", fontWeight: 600,
+                  color: tab === n.id ? PALETTE.accent : PALETTE.muted,
+                  borderBottom: `2px solid ${tab === n.id ? PALETTE.accent : "transparent"}`,
+                  transition: "all 0.2s",
+                }}>
+                  {n.label.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       {/* ── Content ── */}
-      <div style={{ position: "relative", zIndex: 1, maxWidth: 1200, margin: "0 auto", padding: "30px 20px" }}>
+      <div style={{ position: "relative", zIndex: 1, maxWidth: 1200, margin: "0 auto", padding: isMobile ? "20px 16px 100px" : "30px 20px" }}>
 
         {/* ── DASHBOARD ── */}
         {tab === "dashboard" && (
@@ -817,45 +856,84 @@ export default function App() {
                       {/* ── Images ── */}
                       {(() => {
                         const dsoKey = firstName.trim().toUpperCase();
-                        const imgs = objectImages[dsoKey] || [];
+                        const imgs = (objectImages[dsoKey] || []).map(normalizeImg);
                         return (
                           <div>
                             <div style={{ color: PALETTE.muted, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'Rajdhani', sans-serif", marginBottom: 10 }}>Images</div>
                             {imgs.length > 0 && (
                               <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
-                                {imgs.map((url, idx) => (
-                                  <div key={idx} style={{ position: "relative", borderRadius: 6, overflow: "hidden", border: `1px solid ${PALETTE.border}`, cursor: "pointer" }}
-                                    onClick={() => setLightboxUrl(url)}
-                                  >
-                                      <img
-                                        src={url} alt={`${firstName} ${idx + 1}`}
-                                        style={{ width: 140, height: 100, objectFit: "cover", display: "block" }}
-                                        onError={e => { e.target.style.display = "none"; e.target.nextSibling.style.display = "flex"; }}
-                                      />
-                                      <div style={{ display: "none", width: 140, height: 100, background: "#0a1020", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 6, padding: 10, boxSizing: "border-box" }}>
+                                {imgs.map((imgData, idx) => {
+                                  const isPickerOpen = scopePickerOpen?.dsoKey === dsoKey && scopePickerOpen?.idx === idx;
+                                  return (
+                                    <div key={idx} style={{ position: "relative", borderRadius: 6, overflow: "visible", border: `1px solid ${PALETTE.border}`, cursor: "pointer" }}
+                                      onClick={() => setLightboxUrl(imgData.url)}
+                                    >
+                                      <div style={{ borderRadius: 6, overflow: "hidden", width: 140, height: 100 }}>
+                                        <img
+                                          src={imgData.url} alt={`${firstName} ${idx + 1}`}
+                                          style={{ width: 140, height: 100, objectFit: "cover", display: "block" }}
+                                          onError={e => { e.target.style.display = "none"; e.target.nextSibling.style.display = "flex"; }}
+                                        />
+                                        <div style={{ display: "none", width: 140, height: 100, background: "#0a1020", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 6, padding: 10, boxSizing: "border-box" }}>
                                           <div style={{ fontSize: 22 }}>🔗</div>
                                           <div style={{ color: PALETTE.accent, fontSize: 11, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 1, textAlign: "center", wordBreak: "break-all", lineHeight: 1.3 }}>
-                                            {(() => { try { return new URL(url).hostname.replace("www.", ""); } catch { return "Open link"; } })()}
+                                            {(() => { try { return new URL(imgData.url).hostname.replace("www.", ""); } catch { return "Open link"; } })()}
                                           </div>
                                         </div>
-                                    <button
-                                      onClick={e => { e.stopPropagation(); removeImage(dsoKey, idx); }}
-                                      style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.7)", border: "none", borderRadius: 3, color: PALETTE.red, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: "2px 5px" }}
-                                    >✕</button>
-                                  </div>
-                                ))}
+                                      </div>
+                                      {/* Remove button */}
+                                      <button
+                                        onClick={e => { e.stopPropagation(); removeImage(dsoKey, idx); }}
+                                        style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.7)", border: "none", borderRadius: 3, color: PALETTE.red, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: "2px 5px", zIndex: 5 }}
+                                      >✕</button>
+                                      {/* Scope badge */}
+                                      <div style={{ position: "absolute", bottom: 4, left: 4, zIndex: 45 }} onClick={e => e.stopPropagation()}>
+                                        <button
+                                          onClick={() => setScopePickerOpen(isPickerOpen ? null : { dsoKey, idx })}
+                                          style={{
+                                            background: imgData.telescope ? "rgba(56,212,255,0.2)" : "rgba(255,192,90,0.25)",
+                                            border: `1px solid ${imgData.telescope ? PALETTE.accent + "60" : PALETTE.gold + "60"}`,
+                                            borderRadius: 3, padding: "1px 5px", cursor: "pointer",
+                                            color: imgData.telescope ? PALETTE.accent : PALETTE.gold,
+                                            fontSize: 10, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 0.5, whiteSpace: "nowrap",
+                                          }}
+                                        >{imgData.telescope || "+ scope"}</button>
+                                        {isPickerOpen && (
+                                          <div style={{ position: "absolute", bottom: "100%", left: 0, marginBottom: 4, background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, borderRadius: 6, overflow: "hidden", minWidth: 150, zIndex: 50, boxShadow: "0 4px 16px rgba(0,0,0,0.6)" }}>
+                                            {scopeOptions.map(sc => (
+                                              <button key={sc} onClick={() => updateImageScope(dsoKey, idx, sc)} style={{ display: "block", width: "100%", background: imgData.telescope === sc ? `${PALETTE.accent}20` : "none", border: "none", padding: "7px 12px", cursor: "pointer", textAlign: "left", color: imgData.telescope === sc ? PALETTE.accent : PALETTE.text, fontSize: 12, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 0.5 }}>{sc}</button>
+                                            ))}
+                                            {!scopeOptions.length && <div style={{ padding: "7px 12px", color: PALETTE.muted, fontSize: 11, fontFamily: "'Rajdhani', sans-serif" }}>No telescopes in log yet</div>}
+                                            {imgData.telescope && (
+                                              <button onClick={() => updateImageScope(dsoKey, idx, "")} style={{ display: "block", width: "100%", background: "none", border: "none", borderTop: `1px solid ${PALETTE.border}`, padding: "6px 12px", cursor: "pointer", textAlign: "left", color: PALETTE.muted, fontSize: 11, fontFamily: "'Rajdhani', sans-serif" }}>Remove tag</button>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
-                            <div style={{ display: "flex", gap: 8 }}>
+                            {/* Add image row — URL + scope picker + button */}
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                               <input
                                 value={imageInput}
                                 onChange={e => setImageInput(e.target.value)}
-                                onKeyDown={e => e.key === "Enter" && addImage(dsoKey, imageInput)}
+                                onKeyDown={e => e.key === "Enter" && addImage(dsoKey, imageInput, imageScope)}
                                 placeholder="Paste image URL…"
-                                style={{ ...inputStyle, flex: 1, padding: "7px 12px", fontSize: 13 }}
+                                style={{ ...inputStyle, flex: "1 1 180px", padding: "7px 12px", fontSize: 13 }}
                               />
+                              <select
+                                value={imageScope}
+                                onChange={e => setImageScope(e.target.value)}
+                                style={{ ...inputStyle, flex: "0 0 auto", padding: "7px 10px", fontSize: 12, color: imageScope ? PALETTE.text : PALETTE.muted }}
+                              >
+                                <option value="">No scope</option>
+                                {scopeOptions.map(sc => <option key={sc} value={sc}>{sc}</option>)}
+                              </select>
                               <button
-                                onClick={() => addImage(dsoKey, imageInput)}
+                                onClick={() => addImage(dsoKey, imageInput, imageScope)}
                                 disabled={!imageInput.trim()}
                                 style={{
                                   background: imageInput.trim() ? PALETTE.accent : PALETTE.border,
@@ -1058,9 +1136,12 @@ export default function App() {
           sessions.forEach(s => {
             const key = s.dsoName.trim().toUpperCase();
             if (!dsoMeta[key]) {
-              dsoMeta[key] = { dsoName: s.dsoName, commonName: s.commonName || "", dsoType: s.dsoType, totalTime: 0, latestDate: "" };
+              dsoMeta[key] = { dsoName: s.dsoName, commonName: s.commonName || "", dsoType: s.dsoType, totalTime: 0, latestDate: "", byScope: {} };
             }
-            dsoMeta[key].totalTime += totalSecs(s);
+            const t = totalSecs(s);
+            dsoMeta[key].totalTime += t;
+            const sc = s.telescope || "";
+            if (sc) dsoMeta[key].byScope[sc] = (dsoMeta[key].byScope[sc] || 0) + t;
             if (!dsoMeta[key].commonName && s.commonName) dsoMeta[key].commonName = s.commonName;
             if (s.date && s.date > dsoMeta[key].latestDate) dsoMeta[key].latestDate = s.date;
           });
@@ -1133,9 +1214,15 @@ export default function App() {
                       }
                       return 0;
                     })
-                    .map(([dsoKey, urls]) => {
-                      const meta = dsoMeta[dsoKey] || { dsoName: dsoKey, commonName: "", dsoType: "Other", totalTime: 0 };
+                    .map(([dsoKey, rawImgs]) => {
+                      const imgs = rawImgs.map(normalizeImg);
+                      const meta = dsoMeta[dsoKey] || { dsoName: dsoKey, commonName: "", dsoType: "Other", totalTime: 0, byScope: {} };
                       const typeColor = TYPE_COLORS[meta.dsoType] || "#6b7280";
+
+                      // Scopes that appear in tagged images — used for the card header time lines
+                      const taggedScopes = [...new Set(imgs.map(i => i.telescope).filter(Boolean))];
+                      const untaggedCount = imgs.filter(i => !i.telescope).length;
+
                       return (
                         <div key={dsoKey} style={{
                           background: PALETTE.panel,
@@ -1165,90 +1252,139 @@ export default function App() {
                                 {meta.dsoType}
                               </span>
                             </div>
-                            {meta.totalTime > 0 && (
-                              <div style={{ marginTop: 6, color: PALETTE.muted, fontSize: 11, fontFamily: "'Share Tech Mono', monospace" }}>
-                                <span style={{ color: PALETTE.gold }}>{fmtTime(meta.totalTime)}</span> total imaging time
-                                {" · "}
-                                <span>{urls.length} image{urls.length !== 1 ? "s" : ""}</span>
-                              </div>
-                            )}
+                            {/* Per-scope integration time — only for scopes with a tagged image */}
+                            <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 2 }}>
+                              {taggedScopes.map(sc => (
+                                <div key={sc} style={{ fontSize: 11, fontFamily: "'Share Tech Mono', monospace", color: PALETTE.muted }}>
+                                  <span style={{ color: PALETTE.gold }}>{fmtTime(meta.byScope[sc] || 0)}</span>
+                                  <span style={{ color: PALETTE.muted }}> · {sc}</span>
+                                </div>
+                              ))}
+                              {untaggedCount > 0 && (
+                                <div style={{ fontSize: 11, fontFamily: "'Rajdhani', sans-serif", color: PALETTE.gold, letterSpacing: 0.5 }}>
+                                  {untaggedCount} image{untaggedCount !== 1 ? "s" : ""} — tap badge to tag scope
+                                </div>
+                              )}
+                              {taggedScopes.length === 0 && untaggedCount === 0 && null}
+                            </div>
                           </div>
 
                           {/* Image grid */}
                           <div style={{
                             display: "grid",
-                            gridTemplateColumns: urls.length === 1 ? "1fr" : urls.length === 2 ? "1fr 1fr" : "1fr 1fr 1fr",
+                            gridTemplateColumns: imgs.length === 1 ? "1fr" : imgs.length === 2 ? "1fr 1fr" : "1fr 1fr 1fr",
                             gap: 2,
                             padding: "0 2px 2px",
                           }}>
-                            {urls.map((url, idx) => {
+                            {imgs.map((imgData, idx) => {
                               const isFirst = idx === 0;
-                              const spanAll = urls.length === 1;
-                              const imgHeight = spanAll ? 220 : urls.length === 2 ? 160 : idx === 0 && urls.length > 3 ? 160 : 120;
+                              const imgHeight = imgs.length === 1 ? 220 : imgs.length === 2 ? 160 : idx === 0 && imgs.length > 3 ? 160 : 120;
+                              const isPickerOpen = scopePickerOpen?.dsoKey === dsoKey && scopePickerOpen?.idx === idx;
                               return (
                                 <div
                                   key={idx}
-                                  onClick={() => setLightboxUrl(url)}
+                                  onClick={() => setLightboxUrl(imgData.url)}
                                   style={{
                                     position: "relative",
                                     cursor: "pointer",
-                                    borderRadius: idx === 0 ? "0 0 0 8px" : idx === urls.length - 1 ? "0 0 8px 0" : 0,
-                                    overflow: "hidden",
+                                    borderRadius: idx === 0 ? "0 0 0 8px" : idx === imgs.length - 1 ? "0 0 8px 0" : 0,
+                                    overflow: "visible",
                                     background: "#0a1020",
-                                    gridColumn: isFirst && urls.length === 3 ? "span 1" : undefined,
+                                    gridColumn: isFirst && imgs.length === 3 ? "span 1" : undefined,
                                   }}
                                 >
-                                  <img
-                                    src={url}
-                                    alt={`${meta.dsoName} ${idx + 1}`}
-                                    style={{ width: "100%", height: imgHeight, objectFit: "cover", display: "block", transition: "transform 0.3s ease" }}
-                                    onMouseEnter={e => e.target.style.transform = "scale(1.04)"}
-                                    onMouseLeave={e => e.target.style.transform = "scale(1)"}
-                                    onError={e => {
-                                      e.target.style.display = "none";
-                                      e.target.nextSibling.style.display = "flex";
-                                    }}
-                                  />
-                                  {/* Fallback for non-embeddable links (e.g. AstroBin) */}
-                                  <div style={{
-                                    display: "none",
-                                    width: "100%", height: imgHeight,
-                                    background: "#0a1020",
-                                    alignItems: "center", justifyContent: "center",
-                                    flexDirection: "column", gap: 6, padding: 10,
-                                    boxSizing: "border-box",
-                                  }}>
-                                    <div style={{ fontSize: 24 }}>🔗</div>
-                                    <div style={{ color: PALETTE.accent, fontSize: 11, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 1, textAlign: "center" }}>
-                                      {(() => { try { return new URL(url).hostname.replace("www.", ""); } catch { return "Link"; } })()}
-                                    </div>
-                                    <a
-                                      href={url} target="_blank" rel="noreferrer"
-                                      onClick={e => e.stopPropagation()}
-                                      style={{
-                                        color: PALETTE.accent, fontSize: 10,
-                                        fontFamily: "'Rajdhani', sans-serif", letterSpacing: 1,
-                                        textDecoration: "none", border: `1px solid ${PALETTE.accent}44`,
-                                        borderRadius: 4, padding: "3px 8px", marginTop: 2,
+                                  <div style={{ borderRadius: idx === 0 ? "0 0 0 8px" : idx === imgs.length - 1 ? "0 0 8px 0" : 0, overflow: "hidden", height: imgHeight }}>
+                                    <img
+                                      src={imgData.url}
+                                      alt={`${meta.dsoName} ${idx + 1}`}
+                                      style={{ width: "100%", height: imgHeight, objectFit: "cover", display: "block", transition: "transform 0.3s ease" }}
+                                      onMouseEnter={e => e.target.style.transform = "scale(1.04)"}
+                                      onMouseLeave={e => e.target.style.transform = "scale(1)"}
+                                      onError={e => {
+                                        e.target.style.display = "none";
+                                        e.target.nextSibling.style.display = "flex";
                                       }}
-                                    >OPEN ↗</a>
-                                  </div>
-                                  {/* Hover overlay */}
-                                  <div style={{
-                                    position: "absolute", inset: 0,
-                                    background: "rgba(0,0,0,0)",
-                                    transition: "background 0.2s",
-                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                  }}
-                                    onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.25)"}
-                                    onMouseLeave={e => e.currentTarget.style.background = "rgba(0,0,0,0)"}
-                                  >
-                                    <span style={{
-                                      color: "white", fontSize: 20, opacity: 0,
-                                      transition: "opacity 0.2s", pointerEvents: "none",
+                                    />
+                                    {/* Fallback for non-embeddable links */}
+                                    <div style={{
+                                      display: "none",
+                                      width: "100%", height: imgHeight,
+                                      background: "#0a1020",
+                                      alignItems: "center", justifyContent: "center",
+                                      flexDirection: "column", gap: 6, padding: 10,
+                                      boxSizing: "border-box",
+                                    }}>
+                                      <div style={{ fontSize: 24 }}>🔗</div>
+                                      <div style={{ color: PALETTE.accent, fontSize: 11, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 1, textAlign: "center" }}>
+                                        {(() => { try { return new URL(imgData.url).hostname.replace("www.", ""); } catch { return "Link"; } })()}
+                                      </div>
+                                      <a
+                                        href={imgData.url} target="_blank" rel="noreferrer"
+                                        onClick={e => e.stopPropagation()}
+                                        style={{
+                                          color: PALETTE.accent, fontSize: 10,
+                                          fontFamily: "'Rajdhani', sans-serif", letterSpacing: 1,
+                                          textDecoration: "none", border: `1px solid ${PALETTE.accent}44`,
+                                          borderRadius: 4, padding: "3px 8px", marginTop: 2,
+                                        }}
+                                      >OPEN ↗</a>
+                                    </div>
+                                    {/* Hover overlay */}
+                                    <div style={{
+                                      position: "absolute", inset: 0,
+                                      background: "rgba(0,0,0,0)",
+                                      transition: "background 0.2s",
+                                      display: "flex", alignItems: "center", justifyContent: "center",
                                     }}
-                                      className="gallery-zoom-icon"
-                                    >⛶</span>
+                                      onMouseEnter={e => e.currentTarget.style.background = "rgba(0,0,0,0.25)"}
+                                      onMouseLeave={e => e.currentTarget.style.background = "rgba(0,0,0,0)"}
+                                    />
+                                  </div>
+
+                                  {/* Scope badge — bottom-left, outside overflow:hidden wrapper */}
+                                  <div style={{ position: "absolute", bottom: 6, left: 6, zIndex: 45 }} onClick={e => e.stopPropagation()}>
+                                    <button
+                                      onClick={() => setScopePickerOpen(isPickerOpen ? null : { dsoKey, idx })}
+                                      style={{
+                                        background: imgData.telescope ? "rgba(56,212,255,0.2)" : "rgba(255,192,90,0.28)",
+                                        border: `1px solid ${imgData.telescope ? PALETTE.accent + "55" : PALETTE.gold + "55"}`,
+                                        borderRadius: 3, padding: "2px 6px", cursor: "pointer",
+                                        color: imgData.telescope ? PALETTE.accent : PALETTE.gold,
+                                        fontSize: 10, fontFamily: "'Rajdhani', sans-serif", fontWeight: 600, letterSpacing: 0.5,
+                                        whiteSpace: "nowrap", backdropFilter: "blur(4px)",
+                                      }}
+                                    >{imgData.telescope || "+ scope"}</button>
+
+                                    {isPickerOpen && (
+                                      <div style={{
+                                        position: "absolute", bottom: "100%", left: 0, marginBottom: 4,
+                                        background: PALETTE.panel, border: `1px solid ${PALETTE.border}`,
+                                        borderRadius: 6, overflow: "hidden", minWidth: 160, zIndex: 50,
+                                        boxShadow: "0 4px 20px rgba(0,0,0,0.7)",
+                                      }}>
+                                        {scopeOptions.map(sc => (
+                                          <button key={sc} onClick={() => updateImageScope(dsoKey, idx, sc)} style={{
+                                            display: "block", width: "100%",
+                                            background: imgData.telescope === sc ? `${PALETTE.accent}20` : "none",
+                                            border: "none", padding: "8px 14px", cursor: "pointer",
+                                            textAlign: "left",
+                                            color: imgData.telescope === sc ? PALETTE.accent : PALETTE.text,
+                                            fontSize: 12, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 0.5,
+                                          }}>{sc}</button>
+                                        ))}
+                                        {!scopeOptions.length && (
+                                          <div style={{ padding: "8px 14px", color: PALETTE.muted, fontSize: 11, fontFamily: "'Rajdhani', sans-serif" }}>No telescopes in log</div>
+                                        )}
+                                        {imgData.telescope && (
+                                          <button onClick={() => updateImageScope(dsoKey, idx, "")} style={{
+                                            display: "block", width: "100%", background: "none",
+                                            border: "none", borderTop: `1px solid ${PALETTE.border}`,
+                                            padding: "7px 14px", cursor: "pointer", textAlign: "left",
+                                            color: PALETTE.muted, fontSize: 11, fontFamily: "'Rajdhani', sans-serif",
+                                          }}>Remove tag</button>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               );
@@ -1343,6 +1479,57 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {/* ── Mobile Bottom Nav ── */}
+      {isMobile && (
+        <div style={{
+          position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100,
+          background: "rgba(7,10,18,0.97)", backdropFilter: "blur(16px)",
+          borderTop: `1px solid ${PALETTE.border}`,
+          display: "flex",
+          paddingBottom: "env(safe-area-inset-bottom)",
+        }}>
+          {navItems.map(n => {
+            const active = tab === n.id;
+            return (
+              <button
+                key={n.id}
+                onClick={() => setTab(n.id)}
+                style={{
+                  flex: 1, background: "none", border: "none", cursor: "pointer",
+                  display: "flex", flexDirection: "column", alignItems: "center",
+                  padding: "6px 2px 8px", gap: 2, WebkitTapHighlightColor: "transparent",
+                }}
+              >
+                {/* Active pip */}
+                <div style={{
+                  width: 20, height: 2, borderRadius: 1, marginBottom: 2,
+                  background: active ? PALETTE.accent : "transparent",
+                  transition: "background 0.2s",
+                }} />
+                {/* Icon */}
+                <div style={{
+                  fontSize: 20, lineHeight: 1,
+                  color: active ? PALETTE.accent : PALETTE.muted,
+                  fontFamily: "'Rajdhani', sans-serif",
+                  transition: "color 0.2s",
+                }}>
+                  {n.icon}
+                </div>
+                {/* Label */}
+                <div style={{
+                  fontSize: 10, letterSpacing: 0.8,
+                  fontFamily: "'Rajdhani', sans-serif", fontWeight: 600,
+                  color: active ? PALETTE.accent : PALETTE.muted,
+                  transition: "color 0.2s",
+                }}>
+                  {n.short.toUpperCase()}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
