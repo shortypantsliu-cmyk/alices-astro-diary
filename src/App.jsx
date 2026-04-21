@@ -61,6 +61,68 @@ const FontLoader = () => {
 // ── Constants ─────────────────────────────────────────────────────────────────
 const DSO_TYPES = ["Galaxy", "Emission Nebula", "Reflection Nebula", "Planetary Nebula", "Supernova Remnant", "Open Cluster", "Globular Cluster", "Dark Nebula", "Other"];
 
+// Telescope upgrade hierarchy — higher tier = better for most targets
+const SCOPE_TIER = { "D2": 1, "D3": 2, "S50": 3 };
+
+// Full Messier catalog for completion tracking
+const MESSIER = [
+  {m:1,  n:"Crab Nebula",           t:"Supernova Remnant"},  {m:2,  n:"",                    t:"Globular Cluster"},
+  {m:3,  n:"",                       t:"Globular Cluster"},  {m:4,  n:"",                    t:"Globular Cluster"},
+  {m:5,  n:"",                       t:"Globular Cluster"},  {m:6,  n:"Butterfly Cluster",   t:"Open Cluster"},
+  {m:7,  n:"Ptolemy Cluster",        t:"Open Cluster"},      {m:8,  n:"Lagoon Nebula",       t:"Emission Nebula"},
+  {m:9,  n:"",                       t:"Globular Cluster"},  {m:10, n:"",                    t:"Globular Cluster"},
+  {m:11, n:"Wild Duck Cluster",      t:"Open Cluster"},      {m:12, n:"",                    t:"Globular Cluster"},
+  {m:13, n:"Hercules Cluster",       t:"Globular Cluster"},  {m:14, n:"",                    t:"Globular Cluster"},
+  {m:15, n:"",                       t:"Globular Cluster"},  {m:16, n:"Eagle Nebula",        t:"Emission Nebula"},
+  {m:17, n:"Omega Nebula",           t:"Emission Nebula"},   {m:18, n:"",                    t:"Open Cluster"},
+  {m:19, n:"",                       t:"Globular Cluster"},  {m:20, n:"Trifid Nebula",       t:"Emission Nebula"},
+  {m:21, n:"",                       t:"Open Cluster"},      {m:22, n:"",                    t:"Globular Cluster"},
+  {m:23, n:"",                       t:"Open Cluster"},      {m:24, n:"Sagittarius Star Cloud",t:"Other"},
+  {m:25, n:"",                       t:"Open Cluster"},      {m:26, n:"",                    t:"Open Cluster"},
+  {m:27, n:"Dumbbell Nebula",        t:"Planetary Nebula"},  {m:28, n:"",                    t:"Globular Cluster"},
+  {m:29, n:"",                       t:"Open Cluster"},      {m:30, n:"",                    t:"Globular Cluster"},
+  {m:31, n:"Andromeda Galaxy",       t:"Galaxy"},            {m:32, n:"",                    t:"Galaxy"},
+  {m:33, n:"Triangulum Galaxy",      t:"Galaxy"},            {m:34, n:"",                    t:"Open Cluster"},
+  {m:35, n:"",                       t:"Open Cluster"},      {m:36, n:"",                    t:"Open Cluster"},
+  {m:37, n:"",                       t:"Open Cluster"},      {m:38, n:"",                    t:"Open Cluster"},
+  {m:39, n:"",                       t:"Open Cluster"},      {m:40, n:"Winnecke 4",          t:"Other"},
+  {m:41, n:"",                       t:"Open Cluster"},      {m:42, n:"Orion Nebula",        t:"Emission Nebula"},
+  {m:43, n:"De Mairan's Nebula",     t:"Emission Nebula"},   {m:44, n:"Beehive Cluster",     t:"Open Cluster"},
+  {m:45, n:"Pleiades",               t:"Open Cluster"},      {m:46, n:"",                    t:"Open Cluster"},
+  {m:47, n:"",                       t:"Open Cluster"},      {m:48, n:"",                    t:"Open Cluster"},
+  {m:49, n:"",                       t:"Galaxy"},            {m:50, n:"",                    t:"Open Cluster"},
+  {m:51, n:"Whirlpool Galaxy",       t:"Galaxy"},            {m:52, n:"",                    t:"Open Cluster"},
+  {m:53, n:"",                       t:"Globular Cluster"},  {m:54, n:"",                    t:"Globular Cluster"},
+  {m:55, n:"",                       t:"Globular Cluster"},  {m:56, n:"",                    t:"Globular Cluster"},
+  {m:57, n:"Ring Nebula",            t:"Planetary Nebula"},  {m:58, n:"",                    t:"Galaxy"},
+  {m:59, n:"",                       t:"Galaxy"},            {m:60, n:"",                    t:"Galaxy"},
+  {m:61, n:"",                       t:"Galaxy"},            {m:62, n:"",                    t:"Globular Cluster"},
+  {m:63, n:"Sunflower Galaxy",       t:"Galaxy"},            {m:64, n:"Black Eye Galaxy",    t:"Galaxy"},
+  {m:65, n:"",                       t:"Galaxy"},            {m:66, n:"",                    t:"Galaxy"},
+  {m:67, n:"",                       t:"Open Cluster"},      {m:68, n:"",                    t:"Globular Cluster"},
+  {m:69, n:"",                       t:"Globular Cluster"},  {m:70, n:"",                    t:"Globular Cluster"},
+  {m:71, n:"",                       t:"Globular Cluster"},  {m:72, n:"",                    t:"Globular Cluster"},
+  {m:73, n:"",                       t:"Other"},             {m:74, n:"Phantom Galaxy",      t:"Galaxy"},
+  {m:75, n:"",                       t:"Globular Cluster"},  {m:76, n:"Little Dumbbell",     t:"Planetary Nebula"},
+  {m:77, n:"Cetus A",                t:"Galaxy"},            {m:78, n:"",                    t:"Reflection Nebula"},
+  {m:79, n:"",                       t:"Globular Cluster"},  {m:80, n:"",                    t:"Globular Cluster"},
+  {m:81, n:"Bode's Galaxy",          t:"Galaxy"},            {m:82, n:"Cigar Galaxy",        t:"Galaxy"},
+  {m:83, n:"Southern Pinwheel",      t:"Galaxy"},            {m:84, n:"",                    t:"Galaxy"},
+  {m:85, n:"",                       t:"Galaxy"},            {m:86, n:"",                    t:"Galaxy"},
+  {m:87, n:"Virgo A",                t:"Galaxy"},            {m:88, n:"",                    t:"Galaxy"},
+  {m:89, n:"",                       t:"Galaxy"},            {m:90, n:"",                    t:"Galaxy"},
+  {m:91, n:"",                       t:"Galaxy"},            {m:92, n:"",                    t:"Globular Cluster"},
+  {m:93, n:"",                       t:"Open Cluster"},      {m:94, n:"Cat's Eye Galaxy",    t:"Galaxy"},
+  {m:95, n:"",                       t:"Galaxy"},            {m:96, n:"",                    t:"Galaxy"},
+  {m:97, n:"Owl Nebula",             t:"Planetary Nebula"},  {m:98, n:"",                    t:"Galaxy"},
+  {m:99, n:"",                       t:"Galaxy"},            {m:100,n:"",                    t:"Galaxy"},
+  {m:101,n:"Pinwheel Galaxy",        t:"Galaxy"},            {m:102,n:"Spindle Galaxy",      t:"Galaxy"},
+  {m:103,n:"",                       t:"Open Cluster"},      {m:104,n:"Sombrero Galaxy",     t:"Galaxy"},
+  {m:105,n:"",                       t:"Galaxy"},            {m:106,n:"",                    t:"Galaxy"},
+  {m:107,n:"",                       t:"Globular Cluster"},  {m:108,n:"Surfboard Galaxy",    t:"Galaxy"},
+  {m:109,n:"",                       t:"Galaxy"},            {m:110,n:"",                    t:"Galaxy"},
+];
+
 const PALETTE = {
   bg: "#070a12",
   panel: "#0e1628",
@@ -231,10 +293,11 @@ export default function App() {
   const [objectImages, setObjectImages] = useState({}); // { "M42": ["url1","url2"], ... }
   const [imageInput, setImageInput] = useState("");
   const [lightboxUrl, setLightboxUrl] = useState(null);
-  const [gallerySort, setGallerySort] = useState("images");
+  const [gallerySort, setGallerySort] = useState("name");
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
-  const [scopePickerOpen, setScopePickerOpen] = useState(null); // { dsoKey, idx } | null
-  const [imageScope, setImageScope] = useState("");              // telescope for the image being added
+  const [scopePickerOpen, setScopePickerOpen] = useState(null);
+  const [imageScope, setImageScope] = useState("");
+  const [saturationThreshold, setSaturationThreshold] = useState(8 * 3600); // seconds, default 8h
   const fileRef = useRef();
 
   // Responsive breakpoint listener
@@ -523,11 +586,12 @@ export default function App() {
   const sortBy = (col) => { if (sortCol === col) setSortDir(d => -d); else { setSortCol(col); setSortDir(-1); } };
 
   const navItems = [
-    { id: "dashboard", label: "Dashboard",                           short: "Dash",    icon: "◈" },
-    { id: "log",       label: "Session Log",                         short: "Log",     icon: "≡" },
+    { id: "dashboard", label: "Dashboard",                             short: "Dash",    icon: "◈" },
+    { id: "log",       label: "Session Log",                           short: "Log",     icon: "≡" },
     { id: "add",       label: editId ? "Edit Session" : "Add Session", short: editId ? "Edit" : "Add", icon: "⊕" },
-    { id: "gallery",   label: "Gallery",                             short: "Gallery", icon: "⊞" },
-    { id: "import",    label: "Import / Export",                     short: "Import",  icon: "⇅" },
+    { id: "gallery",   label: "Gallery",                               short: "Gallery", icon: "⊞" },
+    { id: "insights",  label: "Insights",                              short: "Insights",icon: "◎" },
+    { id: "import",    label: "Import / Export",                       short: "I/O",     icon: "⇅" },
   ];
 
   const TH = ({ col, label }) => (
@@ -1158,31 +1222,31 @@ export default function App() {
           return (
             <div style={{ animation: "fadeIn 0.4s ease" }}>
               {/* Header row */}
-              <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 28, flexWrap: "wrap", justifyContent: "space-between" }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 16 }}>
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: totalImageCount > 0 ? 10 : 0 }}>
                   <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 20, fontWeight: 700, color: PALETTE.accent, letterSpacing: 2 }}>
                     ✦ IMAGE GALLERY
                   </div>
-                  {totalImageCount > 0 && (
-                    <div style={{ color: PALETTE.muted, fontSize: 12, fontFamily: "'Share Tech Mono', monospace" }}>
-                      {totalImageCount} image{totalImageCount !== 1 ? "s" : ""} across {imageEntries.length} object{imageEntries.length !== 1 ? "s" : ""}
+                  {imageEntries.length > 0 && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ color: PALETTE.muted, fontSize: 11, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 1.5, textTransform: "uppercase" }}>Sort</span>
+                      <div style={{ display: "flex", background: "#0a1020", border: `1px solid ${PALETTE.border}`, borderRadius: 6, overflow: "hidden" }}>
+                        {[["name", "Name"], ["type", "DSO Type"], ["telescope", "Telescope"]].map(([mode, label]) => (
+                          <button key={mode} onClick={() => setGallerySort(mode)} style={{
+                            background: gallerySort === mode ? PALETTE.accent : "none",
+                            color: gallerySort === mode ? PALETTE.bg : PALETTE.muted,
+                            border: "none", padding: "6px 14px", cursor: "pointer",
+                            fontFamily: "'Rajdhani', sans-serif", fontSize: 11, fontWeight: 700,
+                            letterSpacing: 1, transition: "all 0.15s", whiteSpace: "nowrap",
+                          }}>{label}</button>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
-                {imageEntries.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ color: PALETTE.muted, fontSize: 11, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 1.5, textTransform: "uppercase" }}>Sort</span>
-                    <div style={{ display: "flex", background: "#0a1020", border: `1px solid ${PALETTE.border}`, borderRadius: 6, overflow: "hidden" }}>
-                      {[["images", "# Images"], ["date", "Date"], ["time", "Imaging Time"], ["name", "Name"], ["type", "DSO Type"]].map(([mode, label]) => (
-                        <button key={mode} onClick={() => setGallerySort(mode)} style={{
-                          background: gallerySort === mode ? PALETTE.accent : "none",
-                          color: gallerySort === mode ? PALETTE.bg : PALETTE.muted,
-                          border: "none", padding: "5px 12px", cursor: "pointer",
-                          fontFamily: "'Rajdhani', sans-serif", fontSize: 11, fontWeight: 700,
-                          letterSpacing: 1, transition: "all 0.15s", whiteSpace: "nowrap",
-                        }}>{label}</button>
-                      ))}
-                    </div>
+                {totalImageCount > 0 && (
+                  <div style={{ color: PALETTE.muted, fontSize: 12, fontFamily: "'Share Tech Mono', monospace" }}>
+                    {totalImageCount} image{totalImageCount !== 1 ? "s" : ""} across {imageEntries.length} object{imageEntries.length !== 1 ? "s" : ""}
                   </div>
                 )}
               </div>
@@ -1206,17 +1270,18 @@ export default function App() {
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 20 }}>
                   {imageEntries
                     .sort((a, b) => {
-                      const ma = dsoMeta[a[0]] || { dsoName: a[0], commonName: "", dsoType: "Other", totalTime: 0, latestDate: "" };
-                      const mb = dsoMeta[b[0]] || { dsoName: b[0], commonName: "", dsoType: "Other", totalTime: 0, latestDate: "" };
-                      if (gallerySort === "images") {
-                        if (b[1].length !== a[1].length) return b[1].length - a[1].length;
-                        return a[0].localeCompare(b[0]);
-                      }
-                      if (gallerySort === "date") return (mb.latestDate || "").localeCompare(ma.latestDate || "");
-                      if (gallerySort === "time") return mb.totalTime - ma.totalTime;
+                      const ma = dsoMeta[a[0]] || { dsoName: a[0], commonName: "", dsoType: "Other", totalTime: 0, latestDate: "", byScope: {} };
+                      const mb = dsoMeta[b[0]] || { dsoName: b[0], commonName: "", dsoType: "Other", totalTime: 0, latestDate: "", byScope: {} };
                       if (gallerySort === "name") return ma.dsoName.localeCompare(mb.dsoName);
                       if (gallerySort === "type") {
                         const tc = ma.dsoType.localeCompare(mb.dsoType);
+                        return tc !== 0 ? tc : ma.dsoName.localeCompare(mb.dsoName);
+                      }
+                      if (gallerySort === "telescope") {
+                        // Sort by the first tagged telescope on each entry (alphabetical), untagged last
+                        const taA = a[1].map(normalizeImg).map(i => i.telescope).filter(Boolean).sort()[0] || "zzz";
+                        const taB = b[1].map(normalizeImg).map(i => i.telescope).filter(Boolean).sort()[0] || "zzz";
+                        const tc = taA.localeCompare(taB);
                         return tc !== 0 ? tc : ma.dsoName.localeCompare(mb.dsoName);
                       }
                       return 0;
@@ -1404,6 +1469,244 @@ export default function App() {
                     })}
                 </div>
               )}
+            </div>
+          );
+        })()}
+
+        {/* ── INSIGHTS ── */}
+        {tab === "insights" && (() => {
+          // ── Per-object analysis ────────────────────────────────────────────
+          const objMap = {};
+          sessions.forEach(s => {
+            const key = s.dsoName.trim().toUpperCase();
+            if (!objMap[key]) objMap[key] = { dsoName: s.dsoName, commonName: s.commonName || "", dsoType: s.dsoType, sessions: [], totalTime: 0 };
+            objMap[key].totalTime += totalSecs(s);
+            objMap[key].sessions.push(s);
+            if (s.commonName && !objMap[key].commonName) objMap[key].commonName = s.commonName;
+          });
+
+          const candidates = Object.values(objMap).map(obj => {
+            const scopes = [...new Set(obj.sessions.map(s => s.telescope).filter(Boolean))];
+            const tiers  = scopes.map(sc => SCOPE_TIER[sc] || 0);
+            const maxTier = tiers.length ? Math.max(...tiers) : 0;
+            const exps    = obj.sessions.map(s => parseFloat(s.exposureTime) || 0).filter(x => x > 0);
+            const minExp  = exps.length ? Math.min(...exps) : 0;
+            const dates   = obj.sessions.map(s => s.date).filter(Boolean).sort();
+            const lastDate = dates[dates.length - 1] || "";
+            const daysSince = lastDate ? (Date.now() - new Date(lastDate)) / 86400000 : 9999;
+
+            const shortSubs  = minExp > 0 && minExp < 30;
+            const noD3orS50  = maxTier < 2;           // never used D3 or S50
+            const noS50      = maxTier < 3 && !noD3orS50; // has D3 but never tried S50
+            const lowTime    = obj.totalTime < saturationThreshold;
+            const stale      = daysSince > 365;
+
+            let score = 0;
+            if (shortSubs) score += 2;
+            if (noD3orS50)  score += 3;
+            else if (noS50) score += 1;
+            if (lowTime)    score += Math.round(3 * Math.max(0, 1 - obj.totalTime / saturationThreshold));
+            if (stale)      score += 1;
+
+            return { ...obj, scopes, maxTier, minExp, lastDate, daysSince, shortSubs, noD3orS50, noS50, lowTime, stale, score };
+          }).filter(c => c.score > 0).sort((a, b) => b.score - a.score);
+
+          // ── Messier completion ─────────────────────────────────────────────
+          const loggedM = new Set(sessions.map(s => {
+            const hit = s.dsoName.trim().toUpperCase().match(/^M(\d{1,3})$/);
+            return hit ? parseInt(hit[1]) : null;
+          }).filter(Boolean));
+          const messierDone    = MESSIER.filter(m => loggedM.has(m.m));
+          const messierMissing = MESSIER.filter(m => !loggedM.has(m.m));
+
+          const threshHours = Math.round(saturationThreshold / 3600);
+
+          // helper: small signal badge
+          const SigBadge = ({ label, color, bg }) => (
+            <span style={{ background: bg, color, border: `1px solid ${color}44`, borderRadius: 3, padding: "1px 6px", fontSize: 10, fontFamily: "'Rajdhani', sans-serif", fontWeight: 600, letterSpacing: 0.5, whiteSpace: "nowrap" }}>{label}</span>
+          );
+
+          return (
+            <div style={{ animation: "fadeIn 0.4s ease" }}>
+              <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 20, fontWeight: 700, color: PALETTE.accent, letterSpacing: 2, marginBottom: 6 }}>
+                ✦ INSIGHTS
+              </div>
+
+              {sessions.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "80px 0", color: PALETTE.muted }}>
+                  <div style={{ fontSize: 48, marginBottom: 16 }}>🔭</div>
+                  <div style={{ fontSize: 16, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 2 }}>NO SESSIONS YET</div>
+                </div>
+              ) : (<>
+
+                {/* ── Threshold control ── */}
+                <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, borderRadius: 10, padding: "16px 22px", marginBottom: 24, display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+                  <div style={{ color: PALETTE.muted, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'Rajdhani', sans-serif", whiteSpace: "nowrap" }}>Saturation threshold</div>
+                  <input type="range" min={1} max={20} step={1} value={threshHours}
+                    onChange={e => setSaturationThreshold(parseInt(e.target.value) * 3600)}
+                    style={{ flex: "1 1 160px", accentColor: PALETTE.accent, cursor: "pointer" }}
+                  />
+                  <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 18, color: PALETTE.gold, minWidth: 40 }}>{threshHours}h</div>
+                  <div style={{ color: PALETTE.muted, fontSize: 12, fontFamily: "'Exo 2', sans-serif" }}>
+                    Objects with ≥ {threshHours}h on best scope at 30s+ subs are treated as complete
+                  </div>
+                </div>
+
+                {/* ── Re-image / Revisit Candidates ── */}
+                <div style={{ marginBottom: 32 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginBottom: 14 }}>
+                    <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 15, fontWeight: 700, color: PALETTE.text, letterSpacing: 2 }}>RE-IMAGE / REVISIT CANDIDATES</div>
+                    <div style={{ color: PALETTE.muted, fontSize: 12, fontFamily: "'Share Tech Mono', monospace" }}>{candidates.length} object{candidates.length !== 1 ? "s" : ""}</div>
+                  </div>
+
+                  {candidates.length === 0 ? (
+                    <div style={{ color: PALETTE.muted, fontSize: 13, padding: "24px 0", fontFamily: "'Exo 2', sans-serif" }}>
+                      All logged objects meet the current threshold — lower it or log more sessions to see candidates.
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ background: "rgba(0,194,255,0.04)" }}>
+                            {[["Object", "left"], ["Type", "left"], ["Scopes used", "left"], ["Min exp", "right"], ["Integration", "right"], ["Signals", "left"], ["Score", "center"]].map(([h, a]) => (
+                              <th key={h} style={{ padding: "9px 14px", textAlign: a, color: PALETTE.muted, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'Rajdhani', sans-serif", borderBottom: `1px solid ${PALETTE.border}`, whiteSpace: "nowrap" }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {candidates.map((c, i) => {
+                            const typeColor = TYPE_COLORS[c.dsoType] || "#6b7280";
+                            const pct = Math.min(100, Math.round((c.totalTime / saturationThreshold) * 100));
+                            return (
+                              <tr key={c.dsoName} style={{ borderBottom: `1px solid ${PALETTE.border}`, background: i % 2 === 0 ? "rgba(255,255,255,0.015)" : "transparent" }}>
+                                {/* Object */}
+                                <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
+                                  <span style={{ fontFamily: "'Share Tech Mono', monospace", color: PALETTE.text, fontWeight: 700 }}>{c.dsoName}</span>
+                                  {c.commonName && <span style={{ color: PALETTE.muted, fontSize: 11, marginLeft: 7, fontFamily: "'Exo 2', sans-serif" }}>{c.commonName}</span>}
+                                </td>
+                                {/* Type */}
+                                <td style={{ padding: "10px 14px" }}>
+                                  <span style={{ background: `${typeColor}22`, color: typeColor, padding: "2px 7px", borderRadius: 4, fontSize: 10, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 0.5, whiteSpace: "nowrap" }}>{c.dsoType}</span>
+                                </td>
+                                {/* Scopes */}
+                                <td style={{ padding: "10px 14px" }}>
+                                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                    {["D2", "D3", "S50"].map(sc => {
+                                      const used = c.scopes.includes(sc);
+                                      return (
+                                        <span key={sc} style={{ padding: "1px 6px", borderRadius: 3, fontSize: 10, fontFamily: "'Rajdhani', sans-serif", fontWeight: 600, border: `1px solid ${used ? PALETTE.border : PALETTE.border + "55"}`, color: used ? PALETTE.text : PALETTE.border, background: used ? "#0a1020" : "transparent", opacity: used ? 1 : 0.4 }}>{sc}</span>
+                                      );
+                                    })}
+                                  </div>
+                                </td>
+                                {/* Min exp */}
+                                <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", color: c.shortSubs ? PALETTE.gold : PALETTE.green, whiteSpace: "nowrap" }}>
+                                  {c.minExp > 0 ? `${c.minExp}s` : "—"}
+                                </td>
+                                {/* Integration with progress bar */}
+                                <td style={{ padding: "10px 14px", textAlign: "right", whiteSpace: "nowrap" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
+                                    <div style={{ width: 60, background: `${PALETTE.accent}18`, borderRadius: 3, height: 6, overflow: "hidden" }}>
+                                      <div style={{ width: `${pct}%`, height: "100%", background: pct >= 100 ? PALETTE.green : pct >= 50 ? PALETTE.gold : PALETTE.red, borderRadius: 3 }} />
+                                    </div>
+                                    <span style={{ fontFamily: "'Share Tech Mono', monospace", color: PALETTE.muted, fontSize: 12 }}>{fmtTime(c.totalTime)}</span>
+                                  </div>
+                                </td>
+                                {/* Signals */}
+                                <td style={{ padding: "10px 14px" }}>
+                                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                    {c.shortSubs  && <SigBadge label="SHORT SUBS"    color={PALETTE.gold}   bg={`${PALETTE.gold}18`} />}
+                                    {c.noD3orS50  && <SigBadge label="TRY D3 / S50" color={PALETTE.red}    bg={`${PALETTE.red}18`} />}
+                                    {c.noS50      && <SigBadge label="TRY S50"       color="#fb923c"        bg="rgba(251,146,60,.15)" />}
+                                    {c.lowTime    && <SigBadge label="MORE TIME"     color={PALETTE.accent} bg={`${PALETTE.accent}15`} />}
+                                    {c.stale      && <SigBadge label="REVISIT"       color={PALETTE.muted}  bg={`${PALETTE.muted}18`} />}
+                                  </div>
+                                </td>
+                                {/* Score */}
+                                <td style={{ padding: "10px 14px", textAlign: "center" }}>
+                                  <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 16, color: c.score >= 6 ? PALETTE.red : c.score >= 4 ? PALETTE.gold : PALETTE.muted }}>{c.score}</span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Score legend */}
+                  <div style={{ marginTop: 12, display: "flex", gap: 20, flexWrap: "wrap", fontSize: 11, fontFamily: "'Rajdhani', sans-serif", color: PALETTE.muted, letterSpacing: 0.5 }}>
+                    <span>Score: <span style={{ color: PALETTE.red }}>6–9</span> high priority  <span style={{ color: PALETTE.gold }}>4–5</span> medium  <span style={{ color: PALETTE.muted }}>1–3</span> low</span>
+                    <span style={{ marginLeft: "auto" }}>SHORT SUBS +2 · TRY D3/S50 +3 · TRY S50 +1 · MORE TIME up to +3 · REVISIT +1</span>
+                  </div>
+                </div>
+
+                {/* ── Messier Catalog Completion ── */}
+                <div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginBottom: 14, flexWrap: "wrap" }}>
+                    <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 15, fontWeight: 700, color: PALETTE.text, letterSpacing: 2 }}>MESSIER CATALOG COMPLETION</div>
+                    <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 13 }}>
+                      <span style={{ color: PALETTE.green }}>{messierDone.length}</span>
+                      <span style={{ color: PALETTE.muted }}> / 110 imaged</span>
+                      {messierMissing.length > 0 && <span style={{ color: PALETTE.muted }}> · {messierMissing.length} remaining</span>}
+                    </div>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div style={{ background: `${PALETTE.accent}18`, borderRadius: 4, height: 6, marginBottom: 18, overflow: "hidden" }}>
+                    <div style={{ width: `${(messierDone.length / 110) * 100}%`, height: "100%", background: PALETTE.green, borderRadius: 4, transition: "width 0.6s ease" }} />
+                  </div>
+
+                  {/* Grid: all 110 cells */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(46px, 1fr))", gap: 4, marginBottom: 16 }}>
+                    {MESSIER.map(({ m, n, t }) => {
+                      const done = loggedM.has(m);
+                      const tc = TYPE_COLORS[t] || "#6b7280";
+                      return (
+                        <div key={m} title={`M${m}${n ? " · " + n : ""} · ${t}`} style={{
+                          background: done ? `${tc}28` : "#0a1020",
+                          border: `1px solid ${done ? tc + "55" : PALETTE.border}`,
+                          borderRadius: 5, padding: "5px 2px", textAlign: "center", cursor: "default",
+                          transition: "background 0.2s",
+                        }}>
+                          <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: done ? tc : PALETTE.border, fontWeight: done ? 700 : 400, lineHeight: 1 }}>M{m}</div>
+                          {done && n && <div style={{ fontSize: 8, color: tc, fontFamily: "'Rajdhani', sans-serif", marginTop: 2, letterSpacing: 0.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", padding: "0 2px" }}>{n.split(" ")[0]}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Missing objects grouped by type */}
+                  {messierMissing.length > 0 && (() => {
+                    const byType = {};
+                    messierMissing.forEach(({ m, n, t }) => {
+                      if (!byType[t]) byType[t] = [];
+                      byType[t].push({ m, n });
+                    });
+                    return (
+                      <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, borderRadius: 10, padding: "16px 20px" }}>
+                        <div style={{ color: PALETTE.muted, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'Rajdhani', sans-serif", marginBottom: 12 }}>Not yet imaged — by type</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {Object.entries(byType).sort((a, b) => b[1].length - a[1].length).map(([type, items]) => {
+                            const tc = TYPE_COLORS[type] || "#6b7280";
+                            return (
+                              <div key={type} style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+                                <span style={{ background: `${tc}22`, color: tc, padding: "2px 8px", borderRadius: 4, fontSize: 10, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 0.5, whiteSpace: "nowrap", minWidth: 130, textAlign: "center" }}>{type}</span>
+                                <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                                  {items.sort((a, b) => a.m - b.m).map(({ m, n }) => (
+                                    <span key={m} title={n || undefined} style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: PALETTE.muted, background: "#0a1020", border: `1px solid ${PALETTE.border}`, borderRadius: 3, padding: "1px 6px", cursor: n ? "help" : "default" }}>M{m}{n ? " *" : ""}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div style={{ marginTop: 10, color: PALETTE.muted, fontSize: 11, fontFamily: "'Exo 2', sans-serif" }}>* hover for common name</div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </>)}
             </div>
           );
         })()}
