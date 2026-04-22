@@ -62,7 +62,7 @@ const FontLoader = () => {
 const DSO_TYPES = ["Galaxy", "Emission Nebula", "Reflection Nebula", "Planetary Nebula", "Supernova Remnant", "Open Cluster", "Globular Cluster", "Dark Nebula", "Other"];
 
 // Telescope upgrade hierarchy — higher tier = better for most targets
-const SCOPE_TIER = { "D2": 1, "D3": 2, "S50": 3 };
+const SCOPE_TIER = { "D2": 1, "D3": 2, "D3-16MB": 2, "S50": 3 };
 
 // Full Messier catalog for completion tracking
 const MESSIER = [
@@ -126,13 +126,13 @@ const MESSIER = [
 const PALETTE = {
   bg: "#070a12",
   panel: "#0e1628",
-  border: "#243050",
+  border: "#2e3d60",
   accent: "#38d4ff",
   gold: "#ffc05a",
   red: "#ff6b84",
   green: "#4eeaa0",
-  text: "#e8f0ff",        // brighter primary text — near white with a blue tint
-  muted: "#8aa4c8",       // muted labels — much lighter than before, still clearly secondary
+  text: "#edf4ff",        // near-white primary text
+  muted: "#b8cce0",       // noticeably lighter — readable at small sizes
   galaxy: "#c4a8ff",
   nebula: "#4eeaa0",
   cluster: "#ffc05a",
@@ -140,18 +140,18 @@ const PALETTE = {
 };
 
 const TYPE_COLORS = {
-  "Galaxy": "#a78bfa",
-  "Emission Nebula": "#f87171",
+  "Galaxy":            "#b39dfa",   // purple — lifted from #a78bfa
+  "Emission Nebula":   "#f87171",
   "Reflection Nebula": "#60a5fa",
-  "Planetary Nebula": "#34d399",
+  "Planetary Nebula":  "#34d399",
   "Supernova Remnant": "#fb923c",
-  "Open Cluster": "#fbbf24",
-  "Globular Cluster": "#f59e0b",
-  "Dark Nebula": "#94a3b8",
-  "Other": "#6b7280",
+  "Open Cluster":      "#fbbf24",
+  "Globular Cluster":  "#f9a825",   // amber — slightly warmer for contrast
+  "Dark Nebula":       "#b0bec5",   // lifted from #94a3b8 — much more readable
+  "Other":             "#90a4ae",   // lifted from #6b7280
 };
 
-// Fields: telescope, date, dsoName (catalog), dsoType, commonName, numSubs, exposureTime, notes
+// Fields: telescope, date, dsoName (catalog), dsoType, commonName, numSubs, exposureTime, notes, secondaries
 const EMPTY_SESSION = {
   id: "",
   date: "",
@@ -162,7 +162,12 @@ const EMPTY_SESSION = {
   exposureTime: "",
   numSubs: "",
   notes: "",
+  secondaries: "",   // comma-separated catalog names, e.g. "M32, M110"
 };
+
+// Parse secondaries string into a trimmed, uppercased array
+const parseSecondaries = (val) =>
+  val ? String(val).split(",").map(s => s.trim()).filter(Boolean) : [];
 
 function fmtTime(seconds) {
   if (!seconds || seconds === 0) return "0s";
@@ -217,12 +222,12 @@ const Stars = () => {
 // ── Input components ──────────────────────────────────────────────────────────
 const inputStyle = {
   background: "#111d35", border: `1px solid ${PALETTE.border}`, borderRadius: 6,
-  color: PALETTE.text, padding: "8px 12px", width: "100%", fontSize: 14,
+  color: PALETTE.text, padding: "8px 12px", width: "100%", fontSize: 15,
   fontFamily: "'Exo 2', sans-serif", outline: "none", boxSizing: "border-box",
 };
 const labelStyle = {
-  color: PALETTE.muted, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase",
-  marginBottom: 4, display: "block", fontFamily: "'Rajdhani', sans-serif",
+  color: PALETTE.muted, fontSize: 13, letterSpacing: 1, textTransform: "uppercase",
+  marginBottom: 5, display: "block", fontFamily: "'Rajdhani', sans-serif", fontWeight: 600,
 };
 
 const Field = ({ label, children }) => (
@@ -239,7 +244,7 @@ const StatCard = ({ label, value, sub, accent = PALETTE.accent }) => (
     borderTop: `2px solid ${accent}`, borderRadius: 8, padding: "18px 20px",
     flex: "1 1 160px", minWidth: 140, animation: "fadeIn 0.4s ease both",
   }}>
-    <div style={{ color: PALETTE.muted, fontSize: 11, letterSpacing: 2, textTransform: "uppercase", fontFamily: "'Rajdhani', sans-serif", marginBottom: 6 }}>{label}</div>
+    <div style={{ color: PALETTE.muted, fontSize: 12, letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'Rajdhani', sans-serif", fontWeight: 600, marginBottom: 6 }}>{label}</div>
     <div style={{ color: accent, fontSize: 28, fontFamily: "'Share Tech Mono', monospace", lineHeight: 1 }}>{value}</div>
     {sub && <div style={{ color: PALETTE.muted, fontSize: 12, marginTop: 4, fontFamily: "'Exo 2', sans-serif" }}>{sub}</div>}
   </div>
@@ -297,7 +302,8 @@ export default function App() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
   const [scopePickerOpen, setScopePickerOpen] = useState(null);
   const [imageScope, setImageScope] = useState("");
-  const [saturationThreshold, setSaturationThreshold] = useState(8 * 3600); // seconds, default 8h
+  const [saturationThreshold, setSaturationThreshold] = useState(8 * 3600);
+  const [secInput, setSecInput] = useState("");
   const fileRef = useRef();
 
   // Responsive breakpoint listener
@@ -375,6 +381,7 @@ export default function App() {
       id: editId || `s_${Date.now()}`,
       exposureTime: parseFloat(form.exposureTime) || 0,
       numSubs: parseInt(form.numSubs) || 0,
+      secondaries: form.secondaries || "",
     };
     let next;
     if (editId) {
@@ -385,6 +392,7 @@ export default function App() {
     updateSessions(next);
     setForm({ ...EMPTY_SESSION });
     setEditId(null);
+    setSecInput("");
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     setTab("log");
@@ -401,7 +409,8 @@ export default function App() {
   };
 
   const editSession = (s) => {
-    setForm({ ...s });
+    setForm({ ...EMPTY_SESSION, ...s, secondaries: s.secondaries || "" });
+    setSecInput("");
     setEditId(s.id);
     setTab("add");
   };
@@ -454,6 +463,7 @@ export default function App() {
           exposureTime: parseFloat(r.exposureTime || r["Exposure Time (sec)"] || r["Exposure (s)"] || r.exposure || 0),
           numSubs: parseInt(r.numSubs || r["Number of Subs"] || r["Num Subs"] || r.subs || 0),
           notes: r.notes || r.Notes || "",
+          secondaries: r.secondaries || r.Secondaries || "",
         })).filter(r => r.dsoName);
         const next = [...sessions, ...imported];
         updateSessions(next);
@@ -499,6 +509,7 @@ export default function App() {
       dsoName: s.dsoName,
       dsoType: s.dsoType,
       commonName: s.commonName,
+      secondaries: s.secondaries || "",
       exposureTime: s.exposureTime,
       numSubs: s.numSubs,
       totalTime_s: totalSecs(s),
@@ -575,7 +586,8 @@ export default function App() {
     !search ||
     s.dsoName.toLowerCase().includes(search.toLowerCase()) ||
     s.commonName?.toLowerCase().includes(search.toLowerCase()) ||
-    s.telescope?.toLowerCase().includes(search.toLowerCase())
+    s.telescope?.toLowerCase().includes(search.toLowerCase()) ||
+    (s.secondaries && s.secondaries.toLowerCase().includes(search.toLowerCase()))
   ).sort((a, b) => {
     let av = a[sortCol], bv = b[sortCol];
     if (sortCol === "totalTime") { av = totalSecs(a); bv = totalSecs(b); }
@@ -598,8 +610,8 @@ export default function App() {
     <th onClick={() => sortBy(col)} style={{
       padding: "10px 14px", textAlign: "left", cursor: "pointer", userSelect: "none",
       color: sortCol === col ? PALETTE.accent : PALETTE.muted,
-      fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase",
-      fontFamily: "'Rajdhani', sans-serif", whiteSpace: "nowrap",
+      fontSize: 12, letterSpacing: 1, textTransform: "uppercase",
+      fontFamily: "'Rajdhani', sans-serif", fontWeight: 600, whiteSpace: "nowrap",
       borderBottom: `1px solid ${PALETTE.border}`,
     }}>
       {label} {sortCol === col ? (sortDir === 1 ? "↑" : "↓") : ""}
@@ -1071,21 +1083,30 @@ export default function App() {
                         onMouseEnter={e => e.currentTarget.style.background = "rgba(56,212,255,0.1)"}
                         onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? "rgba(255,255,255,0.015)" : "transparent"}
                       >
-                        <td style={{ padding: "10px 14px", color: PALETTE.muted, fontFamily: "'Share Tech Mono', monospace", whiteSpace: "nowrap" }}>{s.date || "—"}</td>
-                        <td style={{ padding: "10px 14px", color: PALETTE.muted }}>{s.telescope || "—"}</td>
-                        <td style={{ padding: "10px 14px", fontWeight: 600, color: PALETTE.text, fontFamily: "'Share Tech Mono', monospace" }}>{s.dsoName}</td>
+                        <td style={{ padding: "10px 14px", color: PALETTE.muted, fontFamily: "'Share Tech Mono', monospace", whiteSpace: "nowrap", fontSize: 13 }}>{s.date || "—"}</td>
+                        <td style={{ padding: "10px 14px", color: PALETTE.text, fontSize: 13 }}>{s.telescope || "—"}</td>
                         <td style={{ padding: "10px 14px" }}>
-                          <span style={{ background: `${TYPE_COLORS[s.dsoType] || "#6b7280"}22`, color: TYPE_COLORS[s.dsoType] || "#6b7280", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 0.5, whiteSpace: "nowrap" }}>
+                          <span style={{ fontWeight: 700, color: PALETTE.text, fontFamily: "'Share Tech Mono', monospace", fontSize: 14 }}>{s.dsoName}</span>
+                          {parseSecondaries(s.secondaries).length > 0 && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 4 }}>
+                              {parseSecondaries(s.secondaries).map(sec => (
+                                <span key={sec} style={{ background: `${PALETTE.accent}15`, border: `1px solid ${PALETTE.accent}40`, color: PALETTE.accent, borderRadius: 3, padding: "0px 5px", fontSize: 10, fontFamily: "'Rajdhani', sans-serif", fontWeight: 600, letterSpacing: 0.5 }}>{sec}</span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ padding: "10px 14px" }}>
+                          <span style={{ background: `${TYPE_COLORS[s.dsoType] || "#90a4ae"}30`, color: TYPE_COLORS[s.dsoType] || "#90a4ae", padding: "3px 9px", borderRadius: 4, fontSize: 12, fontFamily: "'Rajdhani', sans-serif", fontWeight: 600, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
                             {s.dsoType}
                           </span>
                         </td>
-                        <td style={{ padding: "10px 14px", color: PALETTE.text, fontStyle: s.commonName ? "normal" : "italic" }}>{s.commonName || <span style={{ color: PALETTE.muted }}>—</span>}</td>
-                        <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", color: PALETTE.text }}>{s.numSubs || "—"}</td>
-                        <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", color: PALETTE.text }}>{s.exposureTime || "—"}</td>
-                        <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", color: PALETTE.gold }}>{fmtTime(totalSecs(s))}</td>
+                        <td style={{ padding: "10px 14px", color: PALETTE.text, fontSize: 13, fontStyle: s.commonName ? "normal" : "italic" }}>{s.commonName || <span style={{ color: PALETTE.muted }}>—</span>}</td>
+                        <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", color: PALETTE.text, fontSize: 13 }}>{s.numSubs || "—"}</td>
+                        <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", color: PALETTE.text, fontSize: 13 }}>{s.exposureTime || "—"}</td>
+                        <td style={{ padding: "10px 14px", textAlign: "right", fontFamily: "'Share Tech Mono', monospace", color: PALETTE.gold, fontSize: 13 }}>{fmtTime(totalSecs(s))}</td>
                         <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
-                          <button onClick={() => editSession(s)} style={{ background: "none", border: `1px solid ${PALETTE.border}`, color: PALETTE.muted, cursor: "pointer", padding: "4px 10px", borderRadius: 4, marginRight: 6, fontSize: 11, fontFamily: "'Rajdhani', sans-serif" }}>EDIT</button>
-                          <button onClick={() => deleteSession(s.id)} style={{ background: "none", border: `1px solid ${PALETTE.red}33`, color: PALETTE.red, cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: 11, fontFamily: "'Rajdhani', sans-serif" }}>DEL</button>
+                          <button onClick={() => editSession(s)} style={{ background: "none", border: `1px solid ${PALETTE.border}`, color: PALETTE.muted, cursor: "pointer", padding: "4px 10px", borderRadius: 4, marginRight: 6, fontSize: 12, fontFamily: "'Rajdhani', sans-serif" }}>EDIT</button>
+                          <button onClick={() => deleteSession(s.id)} style={{ background: "none", border: `1px solid ${PALETTE.red}55`, color: PALETTE.red, cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: 12, fontFamily: "'Rajdhani', sans-serif" }}>DEL</button>
                         </td>
                       </tr>
                     ))}
@@ -1165,6 +1186,59 @@ export default function App() {
                   onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
               </Field>
 
+              {/* Secondaries — full width below grid */}
+              <Field label="Secondary Objects (also in frame)">
+                <div>
+                  {parseSecondaries(form.secondaries).length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                      {parseSecondaries(form.secondaries).map(sec => (
+                        <span key={sec} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: `${PALETTE.accent}18`, border: `1px solid ${PALETTE.accent}50`, color: PALETTE.accent, borderRadius: 4, padding: "3px 8px", fontSize: 13, fontFamily: "'Rajdhani', sans-serif", fontWeight: 600 }}>
+                          {sec}
+                          <span
+                            onClick={() => {
+                              const updated = parseSecondaries(form.secondaries).filter(x => x !== sec).join(", ");
+                              setForm(f => ({ ...f, secondaries: updated }));
+                            }}
+                            style={{ cursor: "pointer", opacity: 0.7, fontSize: 12, lineHeight: 1 }}>✕</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      style={{ ...inputStyle, flex: 1 }}
+                      placeholder="e.g. M32  then press Enter or Add"
+                      value={secInput}
+                      onChange={e => setSecInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter" && secInput.trim()) {
+                          e.preventDefault();
+                          const tag = secInput.trim().toUpperCase();
+                          const existing = parseSecondaries(form.secondaries);
+                          if (!existing.includes(tag)) {
+                            setForm(f => ({ ...f, secondaries: [...existing, tag].join(", ") }));
+                          }
+                          setSecInput("");
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!secInput.trim()) return;
+                        const tag = secInput.trim().toUpperCase();
+                        const existing = parseSecondaries(form.secondaries);
+                        if (!existing.includes(tag)) {
+                          setForm(f => ({ ...f, secondaries: [...existing, tag].join(", ") }));
+                        }
+                        setSecInput("");
+                      }}
+                      style={{ background: PALETTE.border, color: PALETTE.text, border: "none", borderRadius: 6, padding: "8px 16px", cursor: "pointer", fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: 1, whiteSpace: "nowrap" }}
+                    >ADD</button>
+                  </div>
+                </div>
+              </Field>
+
               <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
                 <button onClick={saveSession} disabled={!form.dsoName.trim()} style={{
                   background: form.dsoName.trim() ? PALETTE.accent : PALETTE.border,
@@ -1176,7 +1250,7 @@ export default function App() {
                 }}>
                   {editId ? "SAVE CHANGES" : "LOG SESSION"}
                 </button>
-                <button onClick={() => { setForm({ ...EMPTY_SESSION }); setEditId(null); }} style={{
+                <button onClick={() => { setForm({ ...EMPTY_SESSION }); setEditId(null); setSecInput(""); }} style={{
                   background: "none", border: `1px solid ${PALETTE.border}`, color: PALETTE.muted,
                   borderRadius: 6, padding: "11px 20px", cursor: "pointer",
                   fontFamily: "'Rajdhani', sans-serif", fontSize: 13, letterSpacing: 1,
@@ -1476,13 +1550,23 @@ export default function App() {
         {/* ── INSIGHTS ── */}
         {tab === "insights" && (() => {
           // ── Per-object analysis ────────────────────────────────────────────
+          // Build per-primary object map (integration time from primaries only)
           const objMap = {};
           sessions.forEach(s => {
             const key = s.dsoName.trim().toUpperCase();
-            if (!objMap[key]) objMap[key] = { dsoName: s.dsoName, commonName: s.commonName || "", dsoType: s.dsoType, sessions: [], totalTime: 0 };
+            if (!objMap[key]) objMap[key] = { dsoName: s.dsoName, commonName: s.commonName || "", dsoType: s.dsoType, sessions: [], totalTime: 0, isSecondaryOnly: false };
             objMap[key].totalTime += totalSecs(s);
             objMap[key].sessions.push(s);
             if (s.commonName && !objMap[key].commonName) objMap[key].commonName = s.commonName;
+          });
+          // Add secondary-only objects (zero integration time, no dedicated sessions)
+          sessions.forEach(s => {
+            parseSecondaries(s.secondaries).forEach(sec => {
+              const key = sec.trim().toUpperCase();
+              if (!objMap[key]) {
+                objMap[key] = { dsoName: sec, commonName: "", dsoType: "Other", sessions: [], totalTime: 0, isSecondaryOnly: true };
+              }
+            });
           });
 
           const candidates = Object.values(objMap).map(obj => {
@@ -1496,26 +1580,34 @@ export default function App() {
             const daysSince = lastDate ? (Date.now() - new Date(lastDate)) / 86400000 : 9999;
 
             const shortSubs  = minExp > 0 && minExp < 30;
-            const noD3orS50  = maxTier < 2;           // never used D3 or S50
-            const noS50      = maxTier < 3 && !noD3orS50; // has D3 but never tried S50
+            const noD3orS50  = maxTier < 2;
+            const noS50      = maxTier < 3 && !noD3orS50;
             const lowTime    = obj.totalTime < saturationThreshold;
             const stale      = daysSince > 365;
 
             let score = 0;
-            if (shortSubs) score += 2;
-            if (noD3orS50)  score += 3;
-            else if (noS50) score += 1;
-            if (lowTime)    score += Math.round(3 * Math.max(0, 1 - obj.totalTime / saturationThreshold));
-            if (stale)      score += 1;
+            if (obj.isSecondaryOnly) score += 4; // never targeted — high priority
+            else {
+              if (shortSubs) score += 2;
+              if (noD3orS50)  score += 3;
+              else if (noS50) score += 1;
+              if (lowTime)    score += Math.round(3 * Math.max(0, 1 - obj.totalTime / saturationThreshold));
+              if (stale)      score += 1;
+            }
 
             return { ...obj, scopes, maxTier, minExp, lastDate, daysSince, shortSubs, noD3orS50, noS50, lowTime, stale, score };
           }).filter(c => c.score > 0).sort((a, b) => b.score - a.score);
 
-          // ── Messier completion ─────────────────────────────────────────────
-          const loggedM = new Set(sessions.map(s => {
+          // ── Messier completion — primaries + secondaries both count ─────────
+          const loggedM = new Set();
+          sessions.forEach(s => {
             const hit = s.dsoName.trim().toUpperCase().match(/^M(\d{1,3})$/);
-            return hit ? parseInt(hit[1]) : null;
-          }).filter(Boolean));
+            if (hit) loggedM.add(parseInt(hit[1]));
+            parseSecondaries(s.secondaries).forEach(sec => {
+              const sh = sec.trim().toUpperCase().match(/^M(\d{1,3})$/);
+              if (sh) loggedM.add(parseInt(sh[1]));
+            });
+          });
           const messierDone    = MESSIER.filter(m => loggedM.has(m.m));
           const messierMissing = MESSIER.filter(m => !loggedM.has(m.m));
 
@@ -1523,7 +1615,7 @@ export default function App() {
 
           // helper: small signal badge
           const SigBadge = ({ label, color, bg }) => (
-            <span style={{ background: bg, color, border: `1px solid ${color}44`, borderRadius: 3, padding: "1px 6px", fontSize: 10, fontFamily: "'Rajdhani', sans-serif", fontWeight: 600, letterSpacing: 0.5, whiteSpace: "nowrap" }}>{label}</span>
+            <span style={{ background: bg, color, border: `1px solid ${color}55`, borderRadius: 3, padding: "2px 7px", fontSize: 11, fontFamily: "'Rajdhani', sans-serif", fontWeight: 600, letterSpacing: 0.5, whiteSpace: "nowrap" }}>{label}</span>
           );
 
           return (
@@ -1586,7 +1678,7 @@ export default function App() {
                                 </td>
                                 {/* Type */}
                                 <td style={{ padding: "10px 14px" }}>
-                                  <span style={{ background: `${typeColor}22`, color: typeColor, padding: "2px 7px", borderRadius: 4, fontSize: 10, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 0.5, whiteSpace: "nowrap" }}>{c.dsoType}</span>
+                                  <span style={{ background: `${typeColor}30`, color: typeColor, padding: "3px 8px", borderRadius: 4, fontSize: 12, fontFamily: "'Rajdhani', sans-serif", fontWeight: 600, letterSpacing: 0.5, whiteSpace: "nowrap" }}>{c.dsoType}</span>
                                 </td>
                                 {/* Scopes */}
                                 <td style={{ padding: "10px 14px" }}>
@@ -1615,11 +1707,12 @@ export default function App() {
                                 {/* Signals */}
                                 <td style={{ padding: "10px 14px" }}>
                                   <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                    {c.isSecondaryOnly && <SigBadge label="SECONDARY" color={PALETTE.galaxy} bg={`${PALETTE.galaxy}18`} />}
                                     {c.shortSubs  && <SigBadge label="SHORT SUBS"    color={PALETTE.gold}   bg={`${PALETTE.gold}18`} />}
                                     {c.noD3orS50  && <SigBadge label="TRY D3 / S50" color={PALETTE.red}    bg={`${PALETTE.red}18`} />}
                                     {c.noS50      && <SigBadge label="TRY S50"       color="#fb923c"        bg="rgba(251,146,60,.15)" />}
-                                    {c.lowTime    && <SigBadge label="MORE TIME"     color={PALETTE.accent} bg={`${PALETTE.accent}15`} />}
-                                    {c.stale      && <SigBadge label="REVISIT"       color={PALETTE.muted}  bg={`${PALETTE.muted}18`} />}
+                                    {c.lowTime    && !c.isSecondaryOnly && <SigBadge label="MORE TIME" color={PALETTE.accent} bg={`${PALETTE.accent}15`} />}
+                                    {c.stale      && !c.isSecondaryOnly && <SigBadge label="REVISIT"   color={PALETTE.muted}  bg={`${PALETTE.muted}18`} />}
                                   </div>
                                 </td>
                                 {/* Score */}
@@ -1635,9 +1728,9 @@ export default function App() {
                   )}
 
                   {/* Score legend */}
-                  <div style={{ marginTop: 12, display: "flex", gap: 20, flexWrap: "wrap", fontSize: 11, fontFamily: "'Rajdhani', sans-serif", color: PALETTE.muted, letterSpacing: 0.5 }}>
-                    <span>Score: <span style={{ color: PALETTE.red }}>6–9</span> high priority  <span style={{ color: PALETTE.gold }}>4–5</span> medium  <span style={{ color: PALETTE.muted }}>1–3</span> low</span>
-                    <span style={{ marginLeft: "auto" }}>SHORT SUBS +2 · TRY D3/S50 +3 · TRY S50 +1 · MORE TIME up to +3 · REVISIT +1</span>
+                  <div style={{ marginTop: 12, display: "flex", gap: 20, flexWrap: "wrap", fontSize: 12, fontFamily: "'Rajdhani', sans-serif", color: PALETTE.muted, letterSpacing: 0.5 }}>
+                    <span>Score: <span style={{ color: PALETTE.red }}>6–9</span> high  <span style={{ color: PALETTE.gold }}>4–5</span> medium  <span style={{ color: PALETTE.muted }}>1–3</span> low</span>
+                    <span style={{ marginLeft: "auto" }}>SECONDARY +4 · SHORT SUBS +2 · TRY D3/S50 +3 · TRY S50 +1 · MORE TIME up to +3 · REVISIT +1</span>
                   </div>
                 </div>
 
@@ -1661,16 +1754,16 @@ export default function App() {
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(46px, 1fr))", gap: 4, marginBottom: 16 }}>
                     {MESSIER.map(({ m, n, t }) => {
                       const done = loggedM.has(m);
-                      const tc = TYPE_COLORS[t] || "#6b7280";
+                      const tc = TYPE_COLORS[t] || "#90a4ae";
                       return (
                         <div key={m} title={`M${m}${n ? " · " + n : ""} · ${t}`} style={{
-                          background: done ? `${tc}28` : "#0a1020",
-                          border: `1px solid ${done ? tc + "55" : PALETTE.border}`,
+                          background: done ? `${tc}30` : "#0a1020",
+                          border: `1px solid ${done ? tc + "70" : PALETTE.border}`,
                           borderRadius: 5, padding: "5px 2px", textAlign: "center", cursor: "default",
                           transition: "background 0.2s",
                         }}>
-                          <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 11, color: done ? tc : PALETTE.border, fontWeight: done ? 700 : 400, lineHeight: 1 }}>M{m}</div>
-                          {done && n && <div style={{ fontSize: 8, color: tc, fontFamily: "'Rajdhani', sans-serif", marginTop: 2, letterSpacing: 0.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", padding: "0 2px" }}>{n.split(" ")[0]}</div>}
+                          <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: done ? tc : PALETTE.muted, fontWeight: done ? 700 : 400, lineHeight: 1 }}>M{m}</div>
+                          {done && n && <div style={{ fontSize: 9, color: tc, fontFamily: "'Rajdhani', sans-serif", marginTop: 2, letterSpacing: 0.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", padding: "0 2px" }}>{n.split(" ")[0]}</div>}
                         </div>
                       );
                     })}
@@ -1685,23 +1778,23 @@ export default function App() {
                     });
                     return (
                       <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, borderRadius: 10, padding: "16px 20px" }}>
-                        <div style={{ color: PALETTE.muted, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'Rajdhani', sans-serif", marginBottom: 12 }}>Not yet imaged — by type</div>
+                        <div style={{ color: PALETTE.muted, fontSize: 12, letterSpacing: 1, textTransform: "uppercase", fontFamily: "'Rajdhani', sans-serif", fontWeight: 600, marginBottom: 12 }}>Not yet imaged — by type</div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                           {Object.entries(byType).sort((a, b) => b[1].length - a[1].length).map(([type, items]) => {
-                            const tc = TYPE_COLORS[type] || "#6b7280";
+                            const tc = TYPE_COLORS[type] || "#90a4ae";
                             return (
                               <div key={type} style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-                                <span style={{ background: `${tc}22`, color: tc, padding: "2px 8px", borderRadius: 4, fontSize: 10, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 0.5, whiteSpace: "nowrap", minWidth: 130, textAlign: "center" }}>{type}</span>
+                                <span style={{ background: `${tc}28`, color: tc, padding: "3px 10px", borderRadius: 4, fontSize: 12, fontFamily: "'Rajdhani', sans-serif", fontWeight: 600, letterSpacing: 0.5, whiteSpace: "nowrap", minWidth: 140, textAlign: "center" }}>{type}</span>
                                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                                   {items.sort((a, b) => a.m - b.m).map(({ m, n }) => (
-                                    <span key={m} title={n || undefined} style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: PALETTE.muted, background: "#0a1020", border: `1px solid ${PALETTE.border}`, borderRadius: 3, padding: "1px 6px", cursor: n ? "help" : "default" }}>M{m}{n ? " *" : ""}</span>
+                                    <span key={m} title={n || undefined} style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 13, color: PALETTE.text, background: "#0a1020", border: `1px solid ${PALETTE.border}`, borderRadius: 3, padding: "2px 7px", cursor: n ? "help" : "default" }}>M{m}{n ? " *" : ""}</span>
                                   ))}
                                 </div>
                               </div>
                             );
                           })}
                         </div>
-                        <div style={{ marginTop: 10, color: PALETTE.muted, fontSize: 11, fontFamily: "'Exo 2', sans-serif" }}>* hover for common name</div>
+                        <div style={{ marginTop: 10, color: PALETTE.muted, fontSize: 12, fontFamily: "'Exo 2', sans-serif" }}>* hover for common name</div>
                       </div>
                     );
                   })()}
@@ -1747,6 +1840,7 @@ export default function App() {
                     ["dsoName", "Catalog name (M42, etc.)"],
                     ["dsoType", "Galaxy, Nebula, etc."],
                     ["commonName", "Orion Nebula, etc."],
+                    ["secondaries", "e.g. M32, M110"],
                     ["numSubs", "Number of subs saved"],
                     ["exposureTime", "Seconds per sub"],
                     ["notes", "Free text notes"],
