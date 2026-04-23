@@ -302,16 +302,7 @@ export default function App() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
   const [scopePickerOpen, setScopePickerOpen] = useState(null);
   const [imageScope, setImageScope] = useState("");
-  const [insightsSettingsOpen, setInsightsSettingsOpen] = useState(false);
-  const [insightsSettings, setInsightsSettings] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem("insights-settings"));
-      if (saved && typeof saved === "object") {
-        return { lat: 37.33, lng: -121.89, horizonN: 20, horizonE: 25, horizonS: 15, horizonW: 30, saturationThreshold: 8 * 3600, ...saved };
-      }
-    } catch {}
-    return { lat: 37.33, lng: -121.89, horizonN: 20, horizonE: 25, horizonS: 15, horizonW: 30, saturationThreshold: 8 * 3600 };
-  });
+  const [saturationThreshold, setSaturationThreshold] = useState(8 * 3600);
   const [secInput, setSecInput] = useState("");
   const fileRef = useRef();
 
@@ -333,11 +324,6 @@ export default function App() {
       } catch {}
     })();
   }, []);
-
-  // Persist insights settings to localStorage whenever they change
-  useEffect(() => {
-    try { localStorage.setItem("insights-settings", JSON.stringify(insightsSettings)); } catch {}
-  }, [insightsSettings]);
 
   // Close scope picker on any outside click — uses document listener to avoid
   // z-index stacking context issues (overlay div approach doesn't work when the
@@ -559,56 +545,21 @@ export default function App() {
   };
 
   // Analytics
-
-  // Build lookup: uppercase catalog name → dsoType from sessions where it was a primary.
-  // Used to resolve secondary object types for the "Unique" breakdown and stat cards.
-  const primaryTypeMap = sessions.reduce((acc, s) => {
-    const k = s.dsoName.trim().toUpperCase();
-    if (!acc[k]) acc[k] = s.dsoType;
-    return acc;
-  }, {});
-
-  // MESSIER catalog lookup by "M<n>" key
-  const messierTypeMap = MESSIER.reduce((acc, m) => { acc[`M${m.m}`] = m.t; return acc; }, {});
-
-  // Resolve the DSO type for any catalog name (used for secondaries)
-  const resolveType = (name) => {
-    const key = name.trim().toUpperCase();
-    if (primaryTypeMap[key]) return primaryTypeMap[key];
-    if (messierTypeMap[key]) return messierTypeMap[key];
-    return "Other";
-  };
-
   const totalTime = sessions.reduce((a, s) => a + totalSecs(s), 0);
-
-  // Sessions mode type counts — primaries only (unchanged)
+  const uniqueObjects = new Set(sessions.map(s => s.dsoName)).size;
   const typeCounts = sessions.reduce((acc, s) => { acc[s.dsoType] = (acc[s.dsoType] || 0) + 1; return acc; }, {});
-  const typeData = Object.entries(typeCounts).map(([name, value]) => ({ name, value }));
-
-  // Unique names — primaries + secondaries combined (for stat cards and catalog counts)
   const uniqueNames = new Set(sessions.map(s => s.dsoName.trim().toUpperCase()));
-  sessions.forEach(s => parseSecondaries(s.secondaries).forEach(sec => uniqueNames.add(sec.trim().toUpperCase())));
-  const uniqueObjects = uniqueNames.size;
   const messierCount = [...uniqueNames].filter(n => /^M\d+$/.test(n)).length;
   const caldwellCount = [...uniqueNames].filter(n => /^C\d+$/.test(n)).length;
   const ngcCount = [...uniqueNames].filter(n => /^NGC\s*\d+/i.test(n)).length;
-
-  // Unique mode type counts — primaries + secondaries, type resolved via resolveType()
   const uniqueTypeCounts = sessions.reduce((acc, s) => {
-    // primary
-    const pk = s.dsoName.trim().toUpperCase();
+    const key = s.dsoType + "__" + s.dsoName.trim().toUpperCase();
     acc[s.dsoType] = acc[s.dsoType] || new Set();
-    acc[s.dsoType].add(pk);
-    // secondaries
-    parseSecondaries(s.secondaries).forEach(sec => {
-      const sk = sec.trim().toUpperCase();
-      const t = resolveType(sk);
-      acc[t] = acc[t] || new Set();
-      acc[t].add(sk);
-    });
+    acc[s.dsoType].add(key);
     return acc;
   }, {});
   const uniqueTypeData = Object.entries(uniqueTypeCounts).map(([name, set]) => ({ name, value: set.size }));
+  const typeData = Object.entries(typeCounts).map(([name, value]) => ({ name, value }));
   const telescopeTimes = sessions.reduce((acc, s) => {
     const k = s.telescope || "Unknown";
     acc[k] = (acc[k] || 0) + totalSecs(s) / 3600;
@@ -1660,28 +1611,11 @@ export default function App() {
           const messierDone    = MESSIER.filter(m => loggedM.has(m.m));
           const messierMissing = MESSIER.filter(m => !loggedM.has(m.m));
 
-          const { lat, lng, horizonN, horizonE, horizonS, horizonW, saturationThreshold } = insightsSettings;
-          const setSetting = (key, val) => setInsightsSettings(s => ({ ...s, [key]: val }));
           const threshHours = Math.round(saturationThreshold / 3600);
 
           // helper: small signal badge
           const SigBadge = ({ label, color, bg }) => (
             <span style={{ background: bg, color, border: `1px solid ${color}55`, borderRadius: 3, padding: "2px 7px", fontSize: 11, fontFamily: "'Rajdhani', sans-serif", fontWeight: 600, letterSpacing: 0.5, whiteSpace: "nowrap" }}>{label}</span>
-          );
-
-          // helper: compact number input for settings
-          const SettingNum = ({ label, value, onChange, step = 1, min, max, unit = "" }) => (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 80 }}>
-              <div style={{ color: PALETTE.muted, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'Rajdhani', sans-serif" }}>{label}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <input
-                  type="number" value={value} step={step} min={min} max={max}
-                  onChange={e => onChange(parseFloat(e.target.value) || 0)}
-                  style={{ ...inputStyle, width: 72, padding: "5px 8px", fontSize: 13, fontFamily: "'Share Tech Mono', monospace" }}
-                />
-                {unit && <span style={{ color: PALETTE.muted, fontSize: 11, fontFamily: "'Rajdhani', sans-serif" }}>{unit}</span>}
-              </div>
-            </div>
           );
 
           return (
@@ -1697,73 +1631,17 @@ export default function App() {
                 </div>
               ) : (<>
 
-                {/* ── Settings panel ── */}
-                <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, borderRadius: 10, marginBottom: 20, overflow: "hidden" }}>
-                  {/* Header / toggle */}
-                  <button
-                    onClick={() => setInsightsSettingsOpen(o => !o)}
-                    style={{
-                      width: "100%", background: "none", border: "none", cursor: "pointer",
-                      display: "flex", alignItems: "center", gap: 10, padding: "13px 20px",
-                      color: insightsSettingsOpen ? PALETTE.accent : PALETTE.muted,
-                      fontFamily: "'Rajdhani', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: 1.5,
-                      textTransform: "uppercase", textAlign: "left",
-                      borderBottom: insightsSettingsOpen ? `1px solid ${PALETTE.border}` : "none",
-                      transition: "color 0.2s",
-                    }}
-                  >
-                    <span style={{ fontSize: 15 }}>⚙</span>
-                    <span>Settings</span>
-                    <span style={{ marginLeft: "auto", fontSize: 14, opacity: 0.6, transition: "transform 0.2s", display: "inline-block", transform: insightsSettingsOpen ? "rotate(180deg)" : "rotate(0deg)" }}>▾</span>
-                  </button>
-
-                  {/* Body */}
-                  {insightsSettingsOpen && (
-                    <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
-
-                      {/* Location */}
-                      <div>
-                        <div style={{ color: PALETTE.muted, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'Rajdhani', sans-serif", marginBottom: 10 }}>Observer Location</div>
-                        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                          <SettingNum label="Latitude" value={lat}  onChange={v => setSetting("lat",  v)} step={0.01} min={-90}  max={90}  unit="°N" />
-                          <SettingNum label="Longitude" value={lng} onChange={v => setSetting("lng",  v)} step={0.01} min={-180} max={180} unit="°E" />
-                        </div>
-                        <div style={{ marginTop: 6, color: PALETTE.muted, fontSize: 11, fontFamily: "'Exo 2', sans-serif" }}>
-                          Default: San Jose, CA (37.33°N, −121.89°E)
-                        </div>
-                      </div>
-
-                      {/* Horizon limits */}
-                      <div>
-                        <div style={{ color: PALETTE.muted, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'Rajdhani', sans-serif", marginBottom: 10 }}>Horizon Altitude Limits</div>
-                        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                          <SettingNum label="North" value={horizonN} onChange={v => setSetting("horizonN", v)} min={0} max={89} unit="°" />
-                          <SettingNum label="East"  value={horizonE} onChange={v => setSetting("horizonE", v)} min={0} max={89} unit="°" />
-                          <SettingNum label="South" value={horizonS} onChange={v => setSetting("horizonS", v)} min={0} max={89} unit="°" />
-                          <SettingNum label="West"  value={horizonW} onChange={v => setSetting("horizonW", v)} min={0} max={89} unit="°" />
-                        </div>
-                        <div style={{ marginTop: 6, color: PALETTE.muted, fontSize: 11, fontFamily: "'Exo 2', sans-serif" }}>
-                          Minimum altitude above horizon for each cardinal direction
-                        </div>
-                      </div>
-
-                      {/* Saturation threshold */}
-                      <div>
-                        <div style={{ color: PALETTE.muted, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'Rajdhani', sans-serif", marginBottom: 10 }}>Saturation Threshold</div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-                          <input type="range" min={1} max={20} step={1} value={threshHours}
-                            onChange={e => setSetting("saturationThreshold", parseInt(e.target.value) * 3600)}
-                            style={{ flex: "1 1 160px", accentColor: PALETTE.accent, cursor: "pointer", minWidth: 120 }}
-                          />
-                          <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 18, color: PALETTE.gold, minWidth: 36 }}>{threshHours}h</div>
-                          <div style={{ color: PALETTE.muted, fontSize: 12, fontFamily: "'Exo 2', sans-serif" }}>
-                            Objects with ≥ {threshHours}h on best scope at 30s+ subs are treated as complete
-                          </div>
-                        </div>
-                      </div>
-
-                    </div>
-                  )}
+                {/* ── Threshold control ── */}
+                <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, borderRadius: 10, padding: "16px 22px", marginBottom: 24, display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+                  <div style={{ color: PALETTE.muted, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", fontFamily: "'Rajdhani', sans-serif", whiteSpace: "nowrap" }}>Saturation threshold</div>
+                  <input type="range" min={1} max={20} step={1} value={threshHours}
+                    onChange={e => setSaturationThreshold(parseInt(e.target.value) * 3600)}
+                    style={{ flex: "1 1 160px", accentColor: PALETTE.accent, cursor: "pointer" }}
+                  />
+                  <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 18, color: PALETTE.gold, minWidth: 40 }}>{threshHours}h</div>
+                  <div style={{ color: PALETTE.muted, fontSize: 12, fontFamily: "'Exo 2', sans-serif" }}>
+                    Objects with ≥ {threshHours}h on best scope at 30s+ subs are treated as complete
+                  </div>
                 </div>
 
                 {/* ── Re-image / Revisit Candidates ── */}
