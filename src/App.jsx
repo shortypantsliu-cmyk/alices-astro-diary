@@ -2,6 +2,53 @@ import { useState, useEffect, useRef } from "react";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 // ── Storage (Netlify Blobs via /api/data, localStorage fallback for local dev) ─
+const VERSION = '2.2.0'
+
+const CHANGELOG = [
+  {
+    version: '2.2.0',
+    label: 'PWA & Version Display',
+    items: [
+      'Installable as a Progressive Web App — add to home screen on iOS and Android',
+      'Offline support via service worker caching',
+      'Version number and release notes added to Import / Export tab',
+    ],
+  },
+  {
+    version: '2.1.0',
+    label: 'Secondary DSO Resolution & Settings Panel',
+    items: [
+      'Secondary objects now counted in unique object stats, catalog breakdowns, and type charts',
+      'Observer location (lat/lng) configurable in Import / Export tab',
+      'Horizon altitude limits configurable in Import / Export tab',
+      'Integration thresholds by object type configurable in Import / Export tab',
+    ],
+  },
+  {
+    version: '2.0.0',
+    label: 'Cloud Sync, Gallery & Insights',
+    items: [
+      'Netlify Blobs cloud sync — diary persists across browsers and devices',
+      'Gallery tab added — visual grid of all imaged objects with lightbox viewer',
+      'Insights tab added — re-image candidate scoring, quality tiers, and Messier completion tracker',
+      'SIMBAD TAP coordinate lookup with local caching',
+      'Visibility and moon phase calculations for planning future sessions',
+    ],
+  },
+  {
+    version: '1.0.0',
+    label: 'Initial Release',
+    items: [
+      'Session logging with DSO catalog name, scope, exposure details, and notes',
+      'Dashboard stats and charts with Sessions/Unique toggle',
+      'Catalog breakdowns — Messier, Caldwell, and NGC counts',
+      'Object lookup panel with image URL attachment and lightbox viewer',
+      'Session Log with sort and search',
+      'Excel export and import',
+    ],
+  },
+]
+
 const DIARY_TOKEN = import.meta.env.VITE_DIARY_SECRET;
 const USE_NETLIFY = Boolean(DIARY_TOKEN);
 
@@ -436,6 +483,55 @@ const ConfirmDialog = ({ message, onConfirm, onCancel }) => (
   </div>
 );
 
+// ── Changelog Modal ───────────────────────────────────────────────────────────
+const ChangelogModal = ({ onClose }) => (
+  <div style={{
+    position: "fixed", inset: 0, zIndex: 1000,
+    background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center",
+    padding: "20px",
+  }} onClick={onClose}>
+    <div style={{
+      background: PALETTE.panel, border: `1px solid ${PALETTE.border}`,
+      borderRadius: 12, padding: "28px 32px", maxWidth: 520, width: "100%",
+      maxHeight: "80vh", overflowY: "auto", animation: "fadeIn 0.2s ease",
+    }} onClick={e => e.stopPropagation()}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 20, fontWeight: 700, color: PALETTE.accent, letterSpacing: 2 }}>RELEASE NOTES</div>
+          <div style={{ color: PALETTE.muted, fontSize: 11, letterSpacing: 2, marginTop: 2 }}>ALICE'S ASTRO DIARY</div>
+        </div>
+        <button onClick={onClose} style={{
+          background: "none", border: `1px solid ${PALETTE.border}`, color: PALETTE.muted,
+          borderRadius: 6, padding: "6px 14px", cursor: "pointer",
+          fontFamily: "'Rajdhani', sans-serif", fontSize: 13, letterSpacing: 1,
+        }}>CLOSE</button>
+      </div>
+      {CHANGELOG.map((entry, i) => (
+        <div key={entry.version} style={{ marginBottom: i < CHANGELOG.length - 1 ? 24 : 0 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+            <span style={{
+              fontFamily: "'Share Tech Mono', monospace", fontSize: 13,
+              color: i === 0 ? PALETTE.accent : PALETTE.gold,
+              background: i === 0 ? "rgba(56,212,255,0.1)" : "rgba(255,192,90,0.1)",
+              border: `1px solid ${i === 0 ? PALETTE.accent : PALETTE.gold}`,
+              borderRadius: 4, padding: "2px 8px",
+            }}>v{entry.version}</span>
+            <span style={{ fontFamily: "'Rajdhani', sans-serif", fontWeight: 600, fontSize: 14, color: PALETTE.text, letterSpacing: 1 }}>{entry.label}</span>
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none" }}>
+            {entry.items.map((item, j) => (
+              <li key={j} style={{ color: PALETTE.muted, fontSize: 13, lineHeight: 1.6, fontFamily: "'Exo 2', sans-serif", marginBottom: 3, display: "flex", gap: 8 }}>
+                <span style={{ color: PALETTE.galaxy, flexShrink: 0 }}>✦</span>{item}
+              </li>
+            ))}
+          </ul>
+          {i < CHANGELOG.length - 1 && <div style={{ borderBottom: `1px solid ${PALETTE.border}`, marginTop: 20 }} />}
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [sessions, setSessions] = useState([]);
@@ -448,6 +544,7 @@ export default function App() {
   const [importMsg, setImportMsg] = useState("");
   const [saved, setSaved] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState(null);
+  const [showChangelog, setShowChangelog] = useState(false);
   const [topScopeFilter, setTopScopeFilter] = useState("All");
   const [typeBreakdownMode, setTypeBreakdownMode] = useState("sessions");
   const [objectSearch, setObjectSearch] = useState("");
@@ -886,6 +983,8 @@ export default function App() {
         />
       )}
 
+      {showChangelog && <ChangelogModal onClose={() => setShowChangelog(false)} />}
+
       {/* ── Lightbox ── */}
       {lightboxUrl && (
         <div onClick={() => setLightboxUrl(null)} style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(0,0,0,0.92)", display: "flex", alignItems: "center", justifyContent: "center", animation: "fadeIn 0.2s ease" }}>
@@ -902,7 +1001,7 @@ export default function App() {
       )}
 
       {/* ── Header ── */}
-      <div style={{ position: "relative", zIndex: 10, borderBottom: `1px solid ${PALETTE.border}`, background: "rgba(7,10,18,0.9)", backdropFilter: "blur(12px)" }}>
+      <div style={{ position: "relative", zIndex: 10, borderBottom: `1px solid ${PALETTE.border}`, background: "rgba(7,10,18,0.9)", backdropFilter: "blur(12px)", paddingTop: "env(safe-area-inset-top)" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: isMobile ? "0 16px" : "0 20px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: isMobile ? "12px 0" : "16px 0 0" }}>
             <div>
@@ -1843,6 +1942,19 @@ export default function App() {
               <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${PALETTE.border}` }}>
                 <button onClick={resetTypeThresholds} style={{ background: "none", border: `1px solid ${PALETTE.border}`, color: PALETTE.muted, borderRadius: 6, padding: "7px 18px", cursor: "pointer", fontFamily: "'Rajdhani', sans-serif", fontSize: 12, letterSpacing: 1 }}>RESET TO DEFAULTS</button>
               </div>
+            </div>
+
+            {/* App Version */}
+            <div style={{ marginTop: 20, background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, borderRadius: 10, padding: "20px 28px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 14, letterSpacing: 2, color: PALETTE.muted, marginBottom: 4 }}>APP VERSION</div>
+                <div style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 16, color: PALETTE.accent }}>v{VERSION}</div>
+              </div>
+              <button onClick={() => setShowChangelog(true)} style={{
+                background: "none", border: `1px solid ${PALETTE.border}`, color: PALETTE.muted,
+                borderRadius: 6, padding: "8px 18px", cursor: "pointer",
+                fontFamily: "'Rajdhani', sans-serif", fontSize: 13, letterSpacing: 1,
+              }}>RELEASE NOTES</button>
             </div>
           </div>
         )}
