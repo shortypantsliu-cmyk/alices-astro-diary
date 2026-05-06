@@ -2,9 +2,17 @@ import { useState, useEffect, useRef } from "react";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 // ── Storage (Netlify Blobs via /api/data, localStorage fallback for local dev) ─
-const VERSION = '2.5.0'
+const VERSION = '2.5.1'
 
 const CHANGELOG = [
+  {
+    version: '2.5.1',
+    label: 'Queue Export & Last Export Timestamp',
+    items: [
+      'Target Queue is now included in the Excel export as a separate sheet',
+      'Last export timestamp shown next to the Export button — syncs across all devices via Netlify Blobs',
+    ],
+  },
   {
     version: '2.5.0',
     label: 'Caldwell Catalog',
@@ -644,6 +652,7 @@ export default function App() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [expandedLogRows, setExpandedLogRows] = useState(new Set());
+  const [lastExport, setLastExport] = useState(null);
   const [topScopeFilter, setTopScopeFilter] = useState("All");
   const [typeBreakdownMode, setTypeBreakdownMode] = useState("sessions");
   const [objectSearch, setObjectSearch] = useState("");
@@ -746,6 +755,8 @@ export default function App() {
         if (ccVal) { const p = JSON.parse(ccVal); setCoordCache(p); coordCacheRef.current = p; }
         const qVal = await storage.get("dso-queue");
         if (qVal) setTargetQueue(JSON.parse(qVal));
+        const expVal = await storage.get("dso-last-export");
+        if (expVal) setLastExport(expVal);
       } catch {}
       setCoordCacheLoaded(true);
     })();
@@ -1023,6 +1034,14 @@ export default function App() {
       const wsImg = XLSX.utils.json_to_sheet(imageRows);
       XLSX.utils.book_append_sheet(wb, wsImg, "Images");
     }
+    if (targetQueue.length > 0) {
+      const queueRows = targetQueue.map(t => ({
+        dsoName: t.dsoName, commonName: t.commonName || "",
+        dsoType: t.dsoType, source: t.source, notes: t.notes || "",
+      }));
+      const wsQ = XLSX.utils.json_to_sheet(queueRows);
+      XLSX.utils.book_append_sheet(wb, wsQ, "Target Queue");
+    }
     const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     const blob = new Blob([wbout], { type: "application/octet-stream" });
     const url = URL.createObjectURL(blob);
@@ -1031,6 +1050,9 @@ export default function App() {
     a.download = `AlicesAstroDiary_${new Date().toISOString().slice(0, 10)}.xlsx`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const ts = new Date().toISOString();
+    setLastExport(ts);
+    storage.set("dso-last-export", ts);
   };
 
   // ── Analytics ─────────────────────────────────────────────────────────────
@@ -2281,7 +2303,14 @@ export default function App() {
 
             <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, borderRadius: 10, padding: "28px" }}>
               <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 14, letterSpacing: 2, color: PALETTE.muted, marginBottom: 16 }}>EXPORT YOUR DATA</div>
-              <button onClick={exportXLSX} disabled={sessions.length === 0} style={{ background: sessions.length > 0 ? PALETTE.gold : PALETTE.border, color: sessions.length > 0 ? PALETTE.bg : PALETTE.muted, border: "none", borderRadius: 6, padding: "11px 28px", cursor: sessions.length > 0 ? "pointer" : "default", fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 14, letterSpacing: 1, marginRight: 12 }}>⬇ EXPORT TO EXCEL</button>
+              <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                <button onClick={exportXLSX} disabled={sessions.length === 0} style={{ background: sessions.length > 0 ? PALETTE.gold : PALETTE.border, color: sessions.length > 0 ? PALETTE.bg : PALETTE.muted, border: "none", borderRadius: 6, padding: "11px 28px", cursor: sessions.length > 0 ? "pointer" : "default", fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 14, letterSpacing: 1 }}>⬇ EXPORT TO EXCEL</button>
+                {lastExport && (
+                  <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: PALETTE.muted }}>
+                    Last export: {(() => { const d = new Date(lastExport); return `${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)} at ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })}`; })()}
+                  </span>
+                )}
+              </div>
               <span style={{ color: PALETTE.muted, fontSize: 12, fontFamily: "'Share Tech Mono', monospace" }}>{sessions.length} session{sessions.length !== 1 ? "s" : ""} · {fmtTime(totalTime)}</span>
             </div>
 
