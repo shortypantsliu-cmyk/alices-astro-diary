@@ -756,7 +756,7 @@ export default function App() {
         const qVal = await storage.get("dso-queue");
         if (qVal) setTargetQueue(JSON.parse(qVal));
         const expVal = await storage.get("dso-last-export");
-        if (expVal) setLastExport(expVal);
+        if (expVal) setLastExport(JSON.parse(expVal));
       } catch {}
       setCoordCacheLoaded(true);
     })();
@@ -1052,7 +1052,7 @@ export default function App() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     const ts = new Date().toISOString();
     setLastExport(ts);
-    storage.set("dso-last-export", ts);
+    storage.set("dso-last-export", JSON.stringify(ts));
   };
 
   // ── Analytics ─────────────────────────────────────────────────────────────
