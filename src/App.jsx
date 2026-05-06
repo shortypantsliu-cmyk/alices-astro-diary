@@ -756,7 +756,7 @@ export default function App() {
         const qVal = await storage.get("dso-queue");
         if (qVal) setTargetQueue(JSON.parse(qVal));
         const expVal = await storage.get("dso-last-export");
-        if (expVal) setLastExport(JSON.parse(expVal));
+        if (expVal) { try { setLastExport(JSON.parse(expVal)); } catch { setLastExport(expVal); } }
       } catch {}
       setCoordCacheLoaded(true);
     })();
