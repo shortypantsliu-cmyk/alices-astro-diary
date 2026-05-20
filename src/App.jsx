@@ -2,9 +2,17 @@ import { useState, useEffect, useRef } from "react";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 // ── Storage (Netlify Blobs via /api/data, localStorage fallback for local dev) ─
-const VERSION = '2.5.1'
+const VERSION = '2.6'
 
 const CHANGELOG = [
+  {
+  version: '2.6.0',
+  label: 'DSO Planner Integration',
+  date: '2026-05-19',
+  changes: [
+    'Copy Imaged List button in Import / Export — exports all imaged object IDs to clipboard for use in DSO Planner',
+  ]
+},
   {
     version: '2.5.1',
     label: 'Queue Export & Last Export Timestamp',
@@ -1053,6 +1061,26 @@ export default function App() {
     const ts = new Date().toISOString();
     setLastExport(ts);
     storage.set("dso-last-export", JSON.stringify(ts));
+  };
+
+  // ── Copy imaged list for DSO Planner ─────────────────────────────────────
+  const [copyConfirm, setCopyConfirm] = useState(false);
+  const copyImagedList = () => {
+    const ids = new Set();
+    sessions.forEach(s => {
+      if (s.dsoName.trim()) ids.add(s.dsoName.trim().toUpperCase());
+      if (s.secondaries) {
+        s.secondaries.split(',').forEach(sec => {
+          const t = sec.trim();
+          if (t) ids.add(t.toUpperCase());
+        });
+      }
+    });
+    const text = [...ids].sort().join(', ');
+    navigator.clipboard.writeText(text).then(() => {
+      setCopyConfirm(true);
+      setTimeout(() => setCopyConfirm(false), 2000);
+    });
   };
 
   // ── Analytics ─────────────────────────────────────────────────────────────
@@ -2305,6 +2333,9 @@ export default function App() {
               <div style={{ fontFamily: "'Rajdhani', sans-serif", fontSize: 14, letterSpacing: 2, color: PALETTE.muted, marginBottom: 16 }}>EXPORT YOUR DATA</div>
               <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
                 <button onClick={exportXLSX} disabled={sessions.length === 0} style={{ background: sessions.length > 0 ? PALETTE.gold : PALETTE.border, color: sessions.length > 0 ? PALETTE.bg : PALETTE.muted, border: "none", borderRadius: 6, padding: "11px 28px", cursor: sessions.length > 0 ? "pointer" : "default", fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 14, letterSpacing: 1 }}>⬇ EXPORT TO EXCEL</button>
+                <button onClick={copyImagedList} disabled={sessions.length === 0} style={{ background: "none", border: `1px solid ${sessions.length > 0 ? PALETTE.accent : PALETTE.border}`, color: sessions.length > 0 ? PALETTE.accent : PALETTE.muted, borderRadius: 6, padding: "11px 20px", cursor: sessions.length > 0 ? "pointer" : "default", fontFamily: "'Rajdhani', sans-serif", fontSize: 13, letterSpacing: 1 }}>
+                  {copyConfirm ? "✓ COPIED!" : "⎘ COPY IMAGED LIST"}
+                </button>
                 {lastExport && (
                   <span style={{ fontFamily: "'Share Tech Mono', monospace", fontSize: 12, color: PALETTE.muted }}>
                     Last export: {(() => { const d = new Date(lastExport); return `${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)} at ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })}`; })()}
