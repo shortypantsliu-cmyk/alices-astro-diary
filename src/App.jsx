@@ -9,9 +9,9 @@ const CHANGELOG = [
   version: '2.6.0',
   label: 'DSO Planner Integration',
   date: '2026-05-19',
-  changes: [
+  items: [
     'Copy Imaged List button in Import / Export — exports all imaged object IDs to clipboard for use in DSO Planner',
-  ]
+  ],
 },
   {
     version: '2.5.1',
